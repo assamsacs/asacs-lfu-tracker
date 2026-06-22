@@ -99,7 +99,9 @@ header h1{font-size:17px;font-weight:700}
     <button class="btn btn-muted" onclick="closeReport()" style="background:#ECEFF1;color:#212121">✕ Close</button>
   </div>
   <div class="report-filters">
-    <select id="rDistrict"><option value="">All Districts</option></select>
+    <select id="rState" onchange="cascadeRDistrict()"><option value="">All States</option></select>
+    <select id="rDistrict" onchange="cascadeRBlock()"><option value="">All Districts</option></select>
+    <select id="rBlock"><option value="">All Blocks</option></select>
     <select id="rFacility"><option value="">All Facilities</option></select>
     <select id="rTrackBy"><option value="">All Track By</option><option>ART</option><option>ICTC</option><option>TI</option><option>CSC</option></select>
     <select id="rStatus">
@@ -108,8 +110,8 @@ header h1{font-size:17px;font-weight:700}
       <option>Re-initiated on ART</option><option>Died</option><option>Opted Out</option>
       <option>Transferred Out / Private</option><option>Not Traceable</option>
     </select>
-    <input type="date" id="rFrom" placeholder="Track Date From">
-    <input type="date" id="rTo" placeholder="Track Date To">
+    <input type="date" id="rDueFrom" placeholder="Due Date From"><span style="font-size:11px;color:var(--muted)">Due Date range</span><input type="date" id="rDueTo" placeholder="Due Date To">
+    <input type="date" id="rFrom" placeholder="Track Date From"><span style="font-size:11px;color:var(--muted)">Track Date range</span><input type="date" id="rTo" placeholder="Track Date To">
     <button class="btn btn-primary" onclick="generateReport()">Generate</button>
     <button class="btn btn-warning" onclick="resetReport()">Reset</button>
     <button class="btn btn-success" onclick="downloadReport()">⬇ Excel</button>
@@ -117,7 +119,7 @@ header h1{font-size:17px;font-weight:700}
   <div id="reportSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div class="report-table-wrap"><table class="report-table" id="reportTable">
     <thead><tr><th>Sl.</th><th>UID</th><th>ART No.</th><th>Name</th><th>Age</th><th>Sex</th>
-    <th>District</th><th>Block</th><th>Facility</th><th>ART Start</th><th>Due Date</th><th>LFU From</th>
+    <th>State</th><th>District</th><th>Block</th><th>Facility</th><th>ART Start</th><th>Due Date</th><th>LFU From</th>
     <th>Track Status</th><th>Track Date</th><th>Track By</th><th>Remarks</th></tr></thead>
     <tbody id="reportBody"></tbody>
   </table></div>
@@ -132,9 +134,13 @@ header h1{font-size:17px;font-weight:700}
 </div>
 
 <div class="filter-row">
-  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">State:</span><select id="fState" onchange="cascadeDistrict();applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="cascadeBlock();applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Block:</span><select id="fBlock" onchange="applyFilters()"><option value="">All</option></select></div>
   <div class="filter-group"><span class="filter-label">Facility:</span><select id="fFacility" onchange="applyFilters()"><option value="">All</option></select></div>
   <div class="filter-group"><span class="filter-label">Track Status:</span><select id="fStatus" onchange="applyFilters()"><option value="">All</option><option value="__blank__">Pending</option></select></div>
+  <div class="filter-group"><span class="filter-label">Due Date From:</span><input type="date" id="fFrom" onchange="applyFilters()"></div>
+  <div class="filter-group"><span class="filter-label">To:</span><input type="date" id="fTo" onchange="applyFilters()"></div>
   <button class="btn btn-warning" onclick="resetFilters()">Reset</button>
 </div>
 
@@ -225,6 +231,7 @@ async function refreshDashboard() {
     const data = await res.json();
     if (!data.ok) return;
     ALL_PATIENTS = data.patients;
+    initFilters();
     applyFilters();
     loadHistory();
   } catch (e) { /* ignore transient errors */ }
@@ -280,31 +287,106 @@ function renderHistoryTable(history) {
 }
 
 function initFilters() {
-  const districts = [...new Set(ALL_PATIENTS.map(p => p.district).filter(Boolean))].sort();
+  const states = [...new Set(ALL_PATIENTS.map(p => p.state).filter(Boolean))].sort();
   const facilities = [...new Set(ALL_PATIENTS.map(p => p.facility).filter(Boolean))].sort();
-  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
+
+  const prevFState = document.getElementById('fState').value;
+  const prevFFacility = document.getElementById('fFacility').value;
+  const prevRState = document.getElementById('rState').value;
+  const prevRFacility = document.getElementById('rFacility').value;
+
+  document.getElementById('fState').innerHTML = '<option value="">All</option>' + states.map(s => `<option>${s}</option>`).join('');
   document.getElementById('fFacility').innerHTML = '<option value="">All</option>' + facilities.map(f => `<option>${f}</option>`).join('');
-  document.getElementById('rDistrict').innerHTML = '<option value="">All Districts</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  document.getElementById('rState').innerHTML = '<option value="">All States</option>' + states.map(s => `<option>${s}</option>`).join('');
   document.getElementById('rFacility').innerHTML = '<option value="">All Facilities</option>' + facilities.map(f => `<option>${f}</option>`).join('');
+
+  if (states.includes(prevFState)) document.getElementById('fState').value = prevFState;
+  if (facilities.includes(prevFFacility)) document.getElementById('fFacility').value = prevFFacility;
+  if (states.includes(prevRState)) document.getElementById('rState').value = prevRState;
+  if (facilities.includes(prevRFacility)) document.getElementById('rFacility').value = prevRFacility;
+
+  cascadeDistrict(/*preserve=*/true);
+  cascadeRDistrict(/*preserve=*/true);
+}
+
+/* Dynamic State -> District -> Block cascades, derived from the live data
+   itself (not a hardcoded list), so they always match what's actually loaded. */
+function districtsFor(state) {
+  const pool = state ? ALL_PATIENTS.filter(p => p.state === state) : ALL_PATIENTS;
+  return [...new Set(pool.map(p => p.district).filter(Boolean))].sort();
+}
+function blocksFor(state, district) {
+  let pool = ALL_PATIENTS;
+  if (state) pool = pool.filter(p => p.state === state);
+  if (district) pool = pool.filter(p => p.district === district);
+  return [...new Set(pool.map(p => p.block).filter(Boolean))].sort();
+}
+
+function cascadeDistrict(preserve) {
+  const state = document.getElementById('fState').value;
+  const prevDistrict = preserve ? document.getElementById('fDistrict').value : '';
+  const districts = districtsFor(state);
+  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  if (districts.includes(prevDistrict)) document.getElementById('fDistrict').value = prevDistrict;
+  cascadeBlock(preserve);
+}
+function cascadeBlock(preserve) {
+  const state = document.getElementById('fState').value;
+  const district = document.getElementById('fDistrict').value;
+  const prevBlock = preserve ? document.getElementById('fBlock').value : '';
+  const blocks = blocksFor(state, district);
+  document.getElementById('fBlock').innerHTML = '<option value="">All</option>' + blocks.map(b => `<option>${b}</option>`).join('');
+  if (blocks.includes(prevBlock)) document.getElementById('fBlock').value = prevBlock;
+}
+function cascadeRDistrict(preserve) {
+  const state = document.getElementById('rState').value;
+  const prevDistrict = preserve ? document.getElementById('rDistrict').value : '';
+  const districts = districtsFor(state);
+  document.getElementById('rDistrict').innerHTML = '<option value="">All Districts</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  if (districts.includes(prevDistrict)) document.getElementById('rDistrict').value = prevDistrict;
+  cascadeRBlock(preserve);
+}
+function cascadeRBlock(preserve) {
+  const state = document.getElementById('rState').value;
+  const district = document.getElementById('rDistrict').value;
+  const prevBlock = preserve ? document.getElementById('rBlock').value : '';
+  const blocks = blocksFor(state, district);
+  document.getElementById('rBlock').innerHTML = '<option value="">All Blocks</option>' + blocks.map(b => `<option>${b}</option>`).join('');
+  if (blocks.includes(prevBlock)) document.getElementById('rBlock').value = prevBlock;
 }
 
 function applyFilters() {
+  const state = document.getElementById('fState').value;
   const district = document.getElementById('fDistrict').value;
+  const block = document.getElementById('fBlock').value;
   const facility = document.getElementById('fFacility').value;
   const status = document.getElementById('fStatus').value;
+  const from = document.getElementById('fFrom').value ? new Date(document.getElementById('fFrom').value) : null;
+  const to = document.getElementById('fTo').value ? new Date(document.getElementById('fTo').value) : null;
   filtered = ALL_PATIENTS.filter(p => {
+    if (state && p.state !== state) return false;
     if (district && p.district !== district) return false;
+    if (block && p.block !== block) return false;
     if (facility && p.facility !== facility) return false;
     if (status === '__blank__' && p.trackStatus) return false;
+    if (from || to) {
+      const dd = parseDateStr(p.dueDate);
+      if (!dd) return false;
+      if (from && dd < from) return false;
+      if (to && dd > to) return false;
+    }
     return true;
   });
   updateDashboard();
 }
 
 function resetFilters() {
-  document.getElementById('fDistrict').value = '';
+  document.getElementById('fState').value = '';
+  cascadeDistrict();
   document.getElementById('fFacility').value = '';
   document.getElementById('fStatus').value = '';
+  document.getElementById('fFrom').value = '';
+  document.getElementById('fTo').value = '';
   applyFilters();
 }
 
@@ -327,19 +409,31 @@ function parseDateStr(s) {
 }
 
 function getReportFiltered() {
+  const state = document.getElementById('rState').value;
   const district = document.getElementById('rDistrict').value;
+  const block = document.getElementById('rBlock').value;
   const facility = document.getElementById('rFacility').value;
   const trackBy = document.getElementById('rTrackBy').value;
   const status = document.getElementById('rStatus').value;
+  const dueFrom = document.getElementById('rDueFrom').value ? new Date(document.getElementById('rDueFrom').value) : null;
+  const dueTo = document.getElementById('rDueTo').value ? new Date(document.getElementById('rDueTo').value) : null;
   const from = document.getElementById('rFrom').value ? new Date(document.getElementById('rFrom').value) : null;
   const to = document.getElementById('rTo').value ? new Date(document.getElementById('rTo').value) : null;
 
   return ALL_PATIENTS.filter(p => {
+    if (state && p.state !== state) return false;
     if (district && p.district !== district) return false;
+    if (block && p.block !== block) return false;
     if (facility && p.facility !== facility) return false;
     if (trackBy && p.trackBy !== trackBy) return false;
     if (status === '__blank__' && p.trackStatus) return false;
     if (status && status !== '__blank__' && p.trackStatus !== status) return false;
+    if (dueFrom || dueTo) {
+      const dd = parseDateStr(p.dueDate);
+      if (!dd) return false;
+      if (dueFrom && dd < dueFrom) return false;
+      if (dueTo && dd > dueTo) return false;
+    }
     if (from || to) {
       const td = parseDateStr(p.trackDate);
       if (!td) return false;
@@ -366,22 +460,24 @@ function generateReport() {
   const tbody = document.getElementById('reportBody');
   tbody.innerHTML = reportData.map((p,i) => `<tr>
     <td>${i+1}</td><td>${p.uid}</td><td>${p.artNo}</td><td>${p.name}</td><td>${p.age}</td><td>${p.sex}</td>
-    <td>${p.district}</td><td>${p.block}</td><td>${p.facility}</td>
+    <td>${p.state}</td><td>${p.district}</td><td>${p.block}</td><td>${p.facility}</td>
     <td>${p.artStart}</td><td>${p.dueDate}</td><td>${p.lfuFrom}</td>
     <td>${p.trackStatus}</td><td>${p.trackDate}</td><td>${p.trackBy}</td><td>${p.remarks}</td>
   </tr>`).join('');
 }
 
 function resetReport() {
-  ['rDistrict','rFacility','rTrackBy','rStatus'].forEach(id => document.getElementById(id).value = '');
+  ['rState','rDistrict','rBlock','rFacility','rTrackBy','rStatus'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rDueFrom').value = '';
+  document.getElementById('rDueTo').value = '';
   document.getElementById('rFrom').value = '';
   document.getElementById('rTo').value = '';
   generateReport();
 }
 
 function downloadReport() {
-  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','District','Block','Facility','ART Start','Due Date','LFU From','Track Status','Track Date','Track By','Remarks']];
-  reportData.forEach((p,i) => ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.district,p.block,p.facility,p.artStart,p.dueDate,p.lfuFrom,p.trackStatus,p.trackDate,p.trackBy,p.remarks]));
+  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','State','District','Block','Facility','ART Start','Due Date','LFU From','Track Status','Track Date','Track By','Remarks']];
+  reportData.forEach((p,i) => ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.state,p.district,p.block,p.facility,p.artStart,p.dueDate,p.lfuFrom,p.trackStatus,p.trackDate,p.trackBy,p.remarks]));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(ws_data);
   XLSX.utils.book_append_sheet(wb, ws, 'LFU Report');
