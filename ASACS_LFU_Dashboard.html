@@ -47,6 +47,17 @@ header h1{font-size:17px;font-weight:700}
 .login-box input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px}
 .login-box button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;font-size:14px}
 .login-error{color:var(--danger);font-size:12px;margin-top:-6px;margin-bottom:10px;display:none}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-box{background:#fff;border-radius:12px;padding:24px;max-width:1000px;width:95%;max-height:90vh;overflow:auto}
+.modal-box h2{font-size:15px;color:var(--primary);margin-bottom:16px;border-bottom:2px solid var(--primary);padding-bottom:8px}
+.report-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.report-filters select,.report-filters input{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px}
+.report-table-wrap{overflow:auto;max-height:400px}
+.report-table{width:100%;border-collapse:collapse;font-size:12px}
+.report-table th{background:var(--primary);color:#fff;padding:7px;text-align:left;position:sticky;top:0}
+.report-table td{padding:6px;border-bottom:1px solid #ECEFF1}
+.report-table tr:nth-child(even) td{background:#F5F5F5}
 </style>
 </head>
 <body>
@@ -78,6 +89,39 @@ header h1{font-size:17px;font-weight:700}
   <input type="file" id="mllFile" accept=".xlsx,.xls,.csv">
   <button class="btn btn-success" onclick="uploadMonthlyList()">Upload &amp; Push to Facilities</button>
   <span class="upload-status" id="uploadStatus">File columns expected: UID, ART No., Name, Age, Sex, State, District, Block, Address, Contact, Facility, ART Start, Due Date, LFU From</span>
+</div>
+
+<!-- Report Modal -->
+<div class="modal" id="reportModal">
+<div class="modal-box">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2>📊 On ART LFU Report</h2>
+    <button class="btn btn-muted" onclick="closeReport()" style="background:#ECEFF1;color:#212121">✕ Close</button>
+  </div>
+  <div class="report-filters">
+    <select id="rDistrict"><option value="">All Districts</option></select>
+    <select id="rFacility"><option value="">All Facilities</option></select>
+    <select id="rTrackBy"><option value="">All Track By</option><option>ART</option><option>ICTC</option><option>TI</option><option>CSC</option></select>
+    <select id="rStatus">
+      <option value="">All Track Status</option>
+      <option value="__blank__">Pending</option>
+      <option>Re-initiated on ART</option><option>Died</option><option>Opted Out</option>
+      <option>Transferred Out / Private</option><option>Not Traceable</option>
+    </select>
+    <input type="date" id="rFrom" placeholder="Track Date From">
+    <input type="date" id="rTo" placeholder="Track Date To">
+    <button class="btn btn-primary" onclick="generateReport()">Generate</button>
+    <button class="btn btn-warning" onclick="resetReport()">Reset</button>
+    <button class="btn btn-success" onclick="downloadReport()">⬇ Excel</button>
+  </div>
+  <div id="reportSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+  <div class="report-table-wrap"><table class="report-table" id="reportTable">
+    <thead><tr><th>Sl.</th><th>UID</th><th>ART No.</th><th>Name</th><th>Age</th><th>Sex</th>
+    <th>District</th><th>Block</th><th>Facility</th><th>ART Start</th><th>Due Date</th><th>LFU From</th>
+    <th>Track Status</th><th>Track Date</th><th>Track By</th><th>Remarks</th></tr></thead>
+    <tbody id="reportBody"></tbody>
+  </table></div>
+</div>
 </div>
 
 <div class="stats-bar" id="statsBar">
@@ -240,6 +284,8 @@ function initFilters() {
   const facilities = [...new Set(ALL_PATIENTS.map(p => p.facility).filter(Boolean))].sort();
   document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
   document.getElementById('fFacility').innerHTML = '<option value="">All</option>' + facilities.map(f => `<option>${f}</option>`).join('');
+  document.getElementById('rDistrict').innerHTML = '<option value="">All Districts</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  document.getElementById('rFacility').innerHTML = '<option value="">All Facilities</option>' + facilities.map(f => `<option>${f}</option>`).join('');
 }
 
 function applyFilters() {
@@ -260,6 +306,86 @@ function resetFilters() {
   document.getElementById('fFacility').value = '';
   document.getElementById('fStatus').value = '';
   applyFilters();
+}
+
+/* ---------- Reports modal ---------- */
+let reportData = [];
+
+function openReport() {
+  document.getElementById('reportModal').classList.add('open');
+  generateReport();
+}
+function closeReport() {
+  document.getElementById('reportModal').classList.remove('open');
+}
+
+function parseDateStr(s) {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!m) return null;
+  return new Date(+m[3], +m[2] - 1, +m[1]);
+}
+
+function getReportFiltered() {
+  const district = document.getElementById('rDistrict').value;
+  const facility = document.getElementById('rFacility').value;
+  const trackBy = document.getElementById('rTrackBy').value;
+  const status = document.getElementById('rStatus').value;
+  const from = document.getElementById('rFrom').value ? new Date(document.getElementById('rFrom').value) : null;
+  const to = document.getElementById('rTo').value ? new Date(document.getElementById('rTo').value) : null;
+
+  return ALL_PATIENTS.filter(p => {
+    if (district && p.district !== district) return false;
+    if (facility && p.facility !== facility) return false;
+    if (trackBy && p.trackBy !== trackBy) return false;
+    if (status === '__blank__' && p.trackStatus) return false;
+    if (status && status !== '__blank__' && p.trackStatus !== status) return false;
+    if (from || to) {
+      const td = parseDateStr(p.trackDate);
+      if (!td) return false;
+      if (from && td < from) return false;
+      if (to && td > to) return false;
+    }
+    return true;
+  });
+}
+
+function generateReport() {
+  reportData = getReportFiltered();
+  const total = reportData.length;
+  const tracked = reportData.filter(p => p.trackStatus).length;
+  const pending = total - tracked;
+  const pct = total > 0 ? ((tracked/total)*100).toFixed(1) : '0';
+
+  document.getElementById('reportSummary').innerHTML = `
+    <div style="background:#E3F2FD;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#1565C0">${total}</div><div style="font-size:11px;color:#607D8B">Total LFU</div></div>
+    <div style="background:#FFEBEE;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#C62828">${pending}</div><div style="font-size:11px;color:#607D8B">Pending</div></div>
+    <div style="background:#E8F5E9;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#2E7D32">${tracked}</div><div style="font-size:11px;color:#607D8B">Tracked</div></div>
+    <div style="background:#FFF3E0;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#E65100">${pct}%</div><div style="font-size:11px;color:#607D8B">% Track Back</div></div>
+  `;
+  const tbody = document.getElementById('reportBody');
+  tbody.innerHTML = reportData.map((p,i) => `<tr>
+    <td>${i+1}</td><td>${p.uid}</td><td>${p.artNo}</td><td>${p.name}</td><td>${p.age}</td><td>${p.sex}</td>
+    <td>${p.district}</td><td>${p.block}</td><td>${p.facility}</td>
+    <td>${p.artStart}</td><td>${p.dueDate}</td><td>${p.lfuFrom}</td>
+    <td>${p.trackStatus}</td><td>${p.trackDate}</td><td>${p.trackBy}</td><td>${p.remarks}</td>
+  </tr>`).join('');
+}
+
+function resetReport() {
+  ['rDistrict','rFacility','rTrackBy','rStatus'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rFrom').value = '';
+  document.getElementById('rTo').value = '';
+  generateReport();
+}
+
+function downloadReport() {
+  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','District','Block','Facility','ART Start','Due Date','LFU From','Track Status','Track Date','Track By','Remarks']];
+  reportData.forEach((p,i) => ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.district,p.block,p.facility,p.artStart,p.dueDate,p.lfuFrom,p.trackStatus,p.trackDate,p.trackBy,p.remarks]));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'LFU Report');
+  XLSX.writeFile(wb, 'ASACS_LFU_Report.xlsx');
 }
 
 function updateDashboard() {
