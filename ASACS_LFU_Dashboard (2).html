@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASACS On-ART LFU Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--primary:#1565C0;--secondary:#0D47A1;--accent:#26C6DA;--success:#2E7D32;--warning:#F57F17;--danger:#C62828;--orange:#E65100;--bg:#F0F4FF;--card:#fff;--border:#CFD8DC;--text:#212121;--muted:#607D8B}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+header{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{font-size:17px;font-weight:700}
+.btn{border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;font-weight:600}
+.btn-muted{background:rgba(255,255,255,.18);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-primary{background:var(--accent);color:#0D47A1}
+.btn-warning{background:var(--warning);color:#fff}
+.btn:hover{opacity:.85}
+.upload-bar{background:#FFF8E1;border-bottom:1px solid #FFE082;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.upload-bar b{color:#8D6E00;font-size:12px}
+.upload-bar input[type=file]{font-size:12px}
+.upload-status{font-size:12px;color:var(--muted)}
+.stats-bar{display:flex;gap:12px;padding:12px 16px;flex-wrap:wrap}
+.stat-card{background:var(--card);border-radius:10px;padding:14px;display:flex;align-items:center;gap:10px;min-width:170px;flex:1;box-shadow:0 1px 4px rgba(0,0,0,.1);border-top:3px solid var(--primary)}
+.stat-card:nth-child(2){border-top-color:var(--danger)}
+.stat-card:nth-child(3){border-top-color:var(--success)}
+.stat-card:nth-child(4){border-top-color:var(--orange)}
+.stat-icon{font-size:24px}
+.stat-val{font-size:22px;font-weight:700;color:var(--primary)}
+.stat-lbl{font-size:11px;color:var(--muted)}
+.progress-bar{width:100%;height:8px;background:#ECEFF1;border-radius:4px;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;background:var(--success)}
+.filter-row{background:#E3F2FD;padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)}
+.filter-row select,.filter-row input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.filter-group{display:flex;gap:6px;align-items:center}
+.filter-label{font-size:11px;font-weight:600;color:var(--secondary)}
+.charts-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:14px 16px}
+.chart-card{background:var(--card);border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);height:300px}
+.chart-card h3{font-size:13px;color:var(--secondary);margin-bottom:8px}
+@media (max-width:900px){.charts-grid{grid-template-columns:1fr}}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+.login-box{background:#fff;border-radius:14px;padding:32px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.login-box h2{color:var(--primary);margin-bottom:6px;font-size:18px}
+.login-box p{color:var(--muted);font-size:12px;margin-bottom:18px}
+.login-box input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px}
+.login-box button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+.login-error{color:var(--danger);font-size:12px;margin-top:-6px;margin-bottom:10px;display:none}
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginScreen">
+  <div class="login-box">
+    <h2>📊 ASACS LFU — PO Dashboard</h2>
+    <p>Enter the State-level Admin PIN to view the live dashboard for all facilities.</p>
+    <input type="password" id="loginPin" placeholder="Admin PIN" inputmode="numeric">
+    <div class="login-error" id="loginError">Invalid PIN.</div>
+    <button onclick="doLogin()">Log In</button>
+  </div>
+</div>
+
+<div id="appScreen" style="display:none">
+<header>
+  <h1>📊 ASACS On-ART LFU Dashboard</h1>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-muted" onclick="refreshDashboard()">🔄 Refresh</button>
+    <button class="btn btn-primary" onclick="openReport()">📊 Reports</button>
+    <button class="btn btn-muted" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<div class="upload-bar">
+  <b>📤 Upload Monthly LFU List</b>
+  <span style="font-size:11px;color:#8D6E00">Reporting month:</span>
+  <input type="month" id="reportMonthInput" style="font-size:12px;padding:4px 6px;border:1px solid #FFE082;border-radius:6px">
+  <input type="file" id="mllFile" accept=".xlsx,.xls,.csv">
+  <button class="btn btn-success" onclick="uploadMonthlyList()">Upload &amp; Push to Facilities</button>
+  <span class="upload-status" id="uploadStatus">File columns expected: UID, ART No., Name, Age, Sex, State, District, Block, Address, Contact, Facility, ART Start, Due Date, LFU From</span>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card"><span class="stat-icon">👥</span><div><div class="stat-val" id="dTotal">0</div><div class="stat-lbl">Total On ART LFU (statewide)</div></div></div>
+  <div class="stat-card"><span class="stat-icon">⏳</span><div><div class="stat-val" id="dPending">0</div><div class="stat-lbl">Track Back Pending</div></div></div>
+  <div class="stat-card"><span class="stat-icon">✅</span><div><div class="stat-val" id="dTracked">0</div><div class="stat-lbl">Tracked Back</div></div></div>
+  <div class="stat-card"><span class="stat-icon">📈</span><div style="flex:1"><div class="stat-val" id="dPct">0%</div><div class="stat-lbl">% Track Back</div><div class="progress-bar"><div class="progress-fill" id="pctBar" style="width:0%"></div></div></div></div>
+</div>
+
+<div class="filter-row">
+  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Facility:</span><select id="fFacility" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Track Status:</span><select id="fStatus" onchange="applyFilters()"><option value="">All</option><option value="__blank__">Pending</option></select></div>
+  <button class="btn btn-warning" onclick="resetFilters()">Reset</button>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card" style="grid-column:1 / -1"><h3>📅 Month-wise LFU & Track-Back Trend (across your monthly uploads)</h3><canvas id="monthTrendChart"></canvas></div>
+  <div class="chart-card"><h3>📊 Track Back Status Distribution</h3><canvas id="statusChart"></canvas></div>
+  <div class="chart-card"><h3>🏥 Track Back By (ART / ICTC / TI / CSC)</h3><canvas id="trackByChart"></canvas></div>
+  <div class="chart-card"><h3>🗺️ Top Districts – LFU Count</h3><canvas id="districtChart"></canvas></div>
+  <div class="chart-card"><h3>🏨 Facility-wise LFU & Track-Back %</h3><canvas id="facilityChart"></canvas></div>
+</div>
+
+<div style="padding:0 16px 16px">
+  <div class="chart-card" style="height:auto">
+    <h3>📋 Month-wise Summary Table</h3>
+    <div style="overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px" id="historyTable">
+        <thead><tr style="background:var(--primary);color:#fff">
+          <th style="padding:6px;text-align:left">Reporting Month</th>
+          <th style="padding:6px">Total LFU</th>
+          <th style="padding:6px">Tracked Back</th>
+          <th style="padding:6px">Pending</th>
+          <th style="padding:6px">% Track Back</th>
+          <th style="padding:6px;text-align:left">Uploaded On</th>
+        </tr></thead>
+        <tbody id="historyTableBody"><tr><td colspan="6" style="padding:10px;color:var(--muted)">No monthly uploads recorded yet.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+/* =====================================================================
+   SET THIS to your deployed Google Apps Script Web App URL (see Code.gs)
+   ===================================================================== */
+const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+let adminPin = '';
+let ALL_PATIENTS = [];
+let filtered = [];
+let charts = {};
+
+async function doLogin() {
+  const pin = document.getElementById('loginPin').value.trim();
+  if (!pin) return;
+  try {
+    const res = await fetch(`${API_URL}?action=login&facility=ADMIN&pin=${encodeURIComponent(pin)}`);
+    const data = await res.json();
+    if (!data.ok) { document.getElementById('loginError').style.display = 'block'; return; }
+    adminPin = pin;
+    sessionStorage.setItem('lfu_admin_pin', pin);
+    ALL_PATIENTS = data.patients;
+    enterApp();
+  } catch (e) {
+    document.getElementById('loginError').textContent = 'Connection error — check API_URL.';
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+
+function enterApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  initFilters();
+  filtered = [...ALL_PATIENTS];
+  updateDashboard();
+  defaultReportMonth();
+  loadHistory();
+}
+
+function defaultReportMonth() {
+  const el = document.getElementById('reportMonthInput');
+  if (!el.value) {
+    const d = new Date();
+    el.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem('lfu_admin_pin');
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginPin').value = '';
+}
+
+async function refreshDashboard() {
+  try {
+    const res = await fetch(`${API_URL}?action=poll&facility=ADMIN&pin=${encodeURIComponent(adminPin)}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    ALL_PATIENTS = data.patients;
+    applyFilters();
+    loadHistory();
+  } catch (e) { /* ignore transient errors */ }
+}
+
+/* ---------- Month-wise history (trend across uploads) ---------- */
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function monthInputToLabel(v) { // "2026-06" -> "Jun-2026"
+  if (!v) return '';
+  const [y, m] = v.split('-');
+  return `${MONTH_LABELS[parseInt(m,10)-1]}-${y}`;
+}
+
+async function loadHistory() {
+  try {
+    const res = await fetch(`${API_URL}?action=history&pin=${encodeURIComponent(adminPin)}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    renderHistoryChart(data.history);
+    renderHistoryTable(data.history);
+  } catch (e) { /* ignore */ }
+}
+
+function renderHistoryChart(history) {
+  if (charts['monthTrendChart']) charts['monthTrendChart'].destroy();
+  charts['monthTrendChart'] = new Chart(document.getElementById('monthTrendChart'), {
+    type: 'line',
+    data: {
+      labels: history.map(h => h.reportMonth),
+      datasets: [
+        { label: 'Total LFU', data: history.map(h => h.total), borderColor:'#1565C0', backgroundColor:'#1565C0', tension:0.25 },
+        { label: 'Tracked Back', data: history.map(h => h.tracked), borderColor:'#2E7D32', backgroundColor:'#2E7D32', tension:0.25 },
+        { label: 'Pending', data: history.map(h => h.pending), borderColor:'#C62828', backgroundColor:'#C62828', tension:0.25 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:true}} }
+  });
+}
+
+function renderHistoryTable(history) {
+  const tbody = document.getElementById('historyTableBody');
+  if (!history.length) { tbody.innerHTML = '<tr><td colspan="6" style="padding:10px;color:var(--muted)">No monthly uploads recorded yet.</td></tr>'; return; }
+  tbody.innerHTML = history.map(h => `
+    <tr>
+      <td style="padding:6px;font-weight:600">${h.reportMonth}</td>
+      <td style="padding:6px;text-align:center">${h.total}</td>
+      <td style="padding:6px;text-align:center;color:var(--success)">${h.tracked}</td>
+      <td style="padding:6px;text-align:center;color:var(--danger)">${h.pending}</td>
+      <td style="padding:6px;text-align:center">${h.pctTracked}%</td>
+      <td style="padding:6px;color:var(--muted)">${h.uploadedAt ? new Date(h.uploadedAt).toLocaleString() : ''}</td>
+    </tr>`).join('');
+}
+
+function initFilters() {
+  const districts = [...new Set(ALL_PATIENTS.map(p => p.district).filter(Boolean))].sort();
+  const facilities = [...new Set(ALL_PATIENTS.map(p => p.facility).filter(Boolean))].sort();
+  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  document.getElementById('fFacility').innerHTML = '<option value="">All</option>' + facilities.map(f => `<option>${f}</option>`).join('');
+}
+
+function applyFilters() {
+  const district = document.getElementById('fDistrict').value;
+  const facility = document.getElementById('fFacility').value;
+  const status = document.getElementById('fStatus').value;
+  filtered = ALL_PATIENTS.filter(p => {
+    if (district && p.district !== district) return false;
+    if (facility && p.facility !== facility) return false;
+    if (status === '__blank__' && p.trackStatus) return false;
+    return true;
+  });
+  updateDashboard();
+}
+
+function resetFilters() {
+  document.getElementById('fDistrict').value = '';
+  document.getElementById('fFacility').value = '';
+  document.getElementById('fStatus').value = '';
+  applyFilters();
+}
+
+function updateDashboard() {
+  const total = filtered.length;
+  const tracked = filtered.filter(p => p.trackStatus).length;
+  const pending = total - tracked;
+  const pct = total > 0 ? (tracked/total*100) : 0;
+  document.getElementById('dTotal').textContent = total;
+  document.getElementById('dPending').textContent = pending;
+  document.getElementById('dTracked').textContent = tracked;
+  document.getElementById('dPct').textContent = pct.toFixed(1) + '%';
+  document.getElementById('pctBar').style.width = pct.toFixed(1) + '%';
+  updateCharts();
+}
+
+function countBy(arr, fn) {
+  const m = {};
+  arr.forEach(x => { const k = fn(x) || '(blank)'; m[k] = (m[k]||0) + 1; });
+  return m;
+}
+
+function renderChart(id, type, labels, data, options) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type, data: { labels, datasets: [{ data, backgroundColor: ['#1565C0','#C62828','#2E7D32','#F57F17','#6A1B9A','#26C6DA','#E65100','#455A64','#AD1457','#00838F'] }] },
+    options: Object.assign({ responsive:true, maintainAspectRatio:false, plugins:{legend:{display: type==='pie'}} }, options || {})
+  });
+}
+
+function updateCharts() {
+  const statusCounts = countBy(filtered.filter(p=>p.trackStatus), p => p.trackStatus);
+  renderChart('statusChart', 'pie', Object.keys(statusCounts), Object.values(statusCounts));
+
+  const byCounts = countBy(filtered.filter(p=>p.trackBy), p => p.trackBy);
+  renderChart('trackByChart', 'bar', Object.keys(byCounts), Object.values(byCounts), { indexAxis:'y' });
+
+  const distCounts = countBy(filtered, p => p.district);
+  const topDist = Object.entries(distCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  renderChart('districtChart', 'bar', topDist.map(d=>d[0]), topDist.map(d=>d[1]), { indexAxis:'y' });
+
+  const facMap = {};
+  filtered.forEach(p => {
+    const f = p.facility || '(blank)';
+    facMap[f] = facMap[f] || { total:0, tracked:0 };
+    facMap[f].total++; if (p.trackStatus) facMap[f].tracked++;
+  });
+  const facEntries = Object.entries(facMap).sort((a,b)=>b[1].total-a[1].total).slice(0,12);
+  renderChart('facilityChart', 'bar', facEntries.map(f=>f[0]), facEntries.map(f=>f[1].total), { indexAxis:'y' });
+}
+
+/* ---------- Monthly LFU list upload ---------- */
+function uploadMonthlyList() {
+  const file = document.getElementById('mllFile').files[0];
+  const reportMonthVal = document.getElementById('reportMonthInput').value;
+  if (!reportMonthVal) { alert('Please select the reporting month for this file.'); return; }
+  if (!file) { alert('Please choose an Excel/CSV file first.'); return; }
+  const reportMonth = monthInputToLabel(reportMonthVal);
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = 'Reading file…';
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      // Flexible header matching: accept either the Tracker's internal
+      // field names or human-readable column headers.
+      const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
+      const fieldMap = {
+        uid:['uid'], artno:['artno','artnumber','artregno','artregnoifinitiatedonart'],
+        name:['name','nameofpatient','patientname'], age:['age'], sex:['sex','gender'],
+        state:['state'], district:['district'], block:['block','taluk','taluktehsil'], address:['address','completeaddress'],
+        contact:['contact','contactnumber','phone'], facility:['facility','facilityname'],
+        artstart:['artstart','dateofstartofart'], duedate:['duedate'], lfufrom:['lfufrom']
+      };
+      function pick(row, keys) {
+        const rowKeys = Object.keys(row);
+        for (const want of keys) {
+          const found = rowKeys.find(k => norm(k) === want);
+          if (found) return row[found];
+        }
+        return '';
+      }
+      const records = rows.map(row => ({
+        uid: pick(row, fieldMap.uid), artNo: pick(row, fieldMap.artno),
+        name: pick(row, fieldMap.name), age: pick(row, fieldMap.age), sex: pick(row, fieldMap.sex),
+        state: pick(row, fieldMap.state) || 'ASSAM',
+        district: pick(row, fieldMap.district), block: pick(row, fieldMap.block),
+        address: pick(row, fieldMap.address), contact: pick(row, fieldMap.contact),
+        facility: pick(row, fieldMap.facility), artStart: pick(row, fieldMap.artstart),
+        dueDate: pick(row, fieldMap.duedate), lfuFrom: pick(row, fieldMap.lfufrom)
+      })).filter(r => r.uid);
+
+      if (records.length === 0) { statusEl.textContent = 'No valid rows found — check the column headers.'; return; }
+
+      statusEl.textContent = `Uploading ${records.length} records for ${reportMonth}…`;
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'uploadList', pin: adminPin, reportMonth, records })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const s = data.summary;
+        statusEl.textContent = `✅ Done for ${s.reportMonth}: ${s.total} active LFU cases now live (${s.added} new, ${s.kept} carried forward with existing tracking, ${s.droppedAsResolved} removed as resolved).`;
+        await refreshDashboard();
+      } else {
+        statusEl.textContent = '❌ Upload failed: ' + data.error;
+      }
+    } catch (err) {
+      statusEl.textContent = '❌ Could not read file: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ---------- Init ---------- */
+const savedPin = sessionStorage.getItem('lfu_admin_pin');
+if (savedPin) {
+  adminPin = savedPin;
+  refreshDashboard().then(enterApp);
+}
+</script>
+</body>
+</html>

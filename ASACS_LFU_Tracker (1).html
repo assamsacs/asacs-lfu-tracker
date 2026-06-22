@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>On ART LFU Tracker – ASACS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--primary:#1565C0;--secondary:#0D47A1;--accent:#26C6DA;--success:#2E7D32;--warning:#F57F17;--danger:#C62828;--orange:#E65100;--purple:#6A1B9A;--bg:#F0F4FF;--card:#fff;--border:#CFD8DC;--text:#212121;--muted:#607D8B}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+header{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+header h1{font-size:16px;font-weight:700}
+.conn-indicator{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
+.conn-dot{width:10px;height:10px;border-radius:50%;background:#ef5350}
+.conn-dot.connected{background:#66BB6A}
+.stats-bar{display:flex;gap:12px;padding:10px 16px;flex-wrap:wrap}
+.stat-card{background:var(--card);border-radius:10px;padding:10px 16px;display:flex;flex-direction:column;align-items:center;min-width:140px;flex:1;box-shadow:0 1px 4px rgba(0,0,0,.1);border-top:3px solid var(--primary)}
+.stat-card:nth-child(2){border-top-color:var(--danger)}
+.stat-card:nth-child(3){border-top-color:var(--success)}
+.stat-card:nth-child(4){border-top-color:var(--orange)}
+.stat-card .val{font-size:24px;font-weight:700;color:var(--primary)}
+.stat-card:nth-child(2) .val{color:var(--danger)}
+.stat-card:nth-child(3) .val{color:var(--success)}
+.stat-card:nth-child(4) .val{color:var(--orange);font-size:20px}
+.stat-card .lbl{font-size:11px;color:var(--muted);margin-top:2px;text-align:center}
+.toolbar{background:var(--card);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input,.toolbar select{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;outline:none}
+.btn{border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:4px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-warning{background:var(--warning);color:#fff}
+.btn-muted{background:#ECEFF1;color:var(--text)}
+.btn:hover{opacity:.85}
+.filter-row{background:#E3F2FD;padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)}
+.filter-row select,.filter-row input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.filter-group{display:flex;gap:6px;align-items:center}
+.filter-label{font-size:11px;font-weight:600;color:var(--secondary)}
+.table-wrap{overflow:auto;max-height:calc(100vh - 320px);padding:0 16px 16px}
+table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+thead tr{background:var(--primary);color:#fff;position:sticky;top:0;z-index:10}
+th{padding:8px 6px;white-space:nowrap;font-weight:600;font-size:11px}
+td{padding:6px;border-bottom:1px solid #ECEFF1;vertical-align:middle}
+tr:hover td{background:#E3F2FD}
+.td-narrow{max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.td-wide{max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.td-addr{max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td select,td input[type=date],td input[type=text]{width:100%;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:11px}
+.save-btn{border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;font-weight:600;width:60px}
+.save-btn.unsaved{background:#ef5350;color:#fff}
+.save-btn.saved{background:#43A047;color:#fff}
+.pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:8px 16px;background:#fff;border-top:1px solid var(--border)}
+.pager span{font-size:12px;color:var(--muted)}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+.login-box{background:#fff;border-radius:14px;padding:32px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.login-box h2{color:var(--primary);margin-bottom:6px;font-size:18px}
+.login-box p{color:var(--muted);font-size:12px;margin-bottom:18px}
+.login-box select,.login-box input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px}
+.login-box button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+.login-error{color:var(--danger);font-size:12px;margin-top:-6px;margin-bottom:10px;display:none}
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginScreen">
+  <div class="login-box">
+    <h2>📋 ASACS On-ART LFU Tracker</h2>
+    <p>Select your facility and enter your PIN to view and update your LFU follow-up list.</p>
+    <select id="loginFacility"><option value="">Loading facilities…</option></select>
+    <input type="password" id="loginPin" placeholder="Facility PIN" inputmode="numeric">
+    <div class="login-error" id="loginError">Invalid facility or PIN. Please try again.</div>
+    <button onclick="doLogin()">Log In</button>
+  </div>
+</div>
+
+<div id="appScreen" style="display:none">
+<header>
+  <div><h1>📋 On ART LFU Tracker &nbsp;|&nbsp; <span id="facilityNameHeader"></span></h1></div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="btn btn-muted" onclick="refreshData()" style="color:var(--primary)">🔄 Refresh</button>
+    <div class="conn-indicator"><div class="conn-dot connected" id="connDot"></div><span id="connLabel">Live</span></div>
+    <button class="btn btn-muted" onclick="logout()" style="color:var(--primary)">Log Out</button>
+  </div>
+</header>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card"><div class="val" id="statTotal">0</div><div class="lbl">Total On ART LFU</div></div>
+  <div class="stat-card"><div class="val" id="statPending">0</div><div class="lbl">Track Back Pending</div></div>
+  <div class="stat-card"><div class="val" id="statTracked">0</div><div class="lbl">Tracked Back</div></div>
+  <div class="stat-card"><div class="val" id="statPct">0%</div><div class="lbl">% Track Back</div></div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="searchBox" placeholder="🔍 Search UID / Name / ART No..." style="width:260px" oninput="applyFilters()">
+  <button class="btn btn-success" onclick="exportExcel()">⬇ Export Excel</button>
+  <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+    <span id="lastSyncLabel" style="font-size:11px;color:var(--muted)"></span>
+  </div>
+</div>
+
+<div class="filter-row">
+  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Track Status:</span>
+    <select id="fStatus" onchange="applyFilters()">
+      <option value="">All</option>
+      <option value="__blank__">Pending</option>
+      <option>Re-initiated on ART</option>
+      <option>Died</option>
+      <option>Opted Out</option>
+      <option>Transferred Out / Private</option>
+      <option>Not Traceable</option>
+    </select>
+  </div>
+  <button class="btn btn-warning" onclick="resetFilters()">Reset</button>
+</div>
+
+<div class="table-wrap">
+<table id="mainTable">
+<thead>
+<tr>
+  <th>Sl.</th><th>UID</th><th>ART No.</th><th>Name/Age/Sex</th>
+  <th>District</th><th>Block</th><th>Address</th>
+  <th>Contact</th><th>ART Start</th><th>Due Date</th>
+  <th>LFU From</th><th>Track Status</th><th>Track Date</th>
+  <th>Track By</th><th>Remarks</th><th>Save</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+<div class="pager">
+  <button class="btn btn-muted" onclick="prevPage()">◀ Prev</button>
+  <span id="pageInfo">Page 1</span>
+  <button class="btn btn-muted" onclick="nextPage()">Next ▶</button>
+  <select id="pageSizeSelect" onchange="changePageSize(this.value)" style="border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+    <option value="50">50/page</option><option value="100">100/page</option><option value="200">200/page</option>
+  </select>
+</div>
+</div>
+
+<script>
+/* =====================================================================
+   SET THIS to your deployed Google Apps Script Web App URL (see Code.gs)
+   ===================================================================== */
+const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+const TRACK_STATUS_OPTIONS = ['Re-initiated on ART','Died','Opted Out','Transferred Out / Private','Not Traceable'];
+const TRACK_BY_OPTIONS = ['ART','ICTC','TI','CSC'];
+
+let session = { facility: '', pin: '' };
+let ALL_PATIENTS = [];
+let filtered = [];
+let page = 1, pageSize = 50;
+let pollTimer = null;
+
+async function loadFacilityList() {
+  try {
+    const res = await fetch(`${API_URL}?action=facilityList`);
+    const data = await res.json();
+    const sel = document.getElementById('loginFacility');
+    sel.innerHTML = '<option value="">Select your facility…</option>' +
+      data.facilities.sort().map(f => `<option value="${f}">${f}</option>`).join('');
+  } catch (e) {
+    document.getElementById('loginFacility').innerHTML = '<option value="">Could not load — check API_URL</option>';
+  }
+}
+
+async function doLogin() {
+  const facility = document.getElementById('loginFacility').value;
+  const pin = document.getElementById('loginPin').value.trim();
+  if (!facility || !pin) { showLoginError('Please select a facility and enter your PIN.'); return; }
+  try {
+    const res = await fetch(`${API_URL}?action=login&facility=${encodeURIComponent(facility)}&pin=${encodeURIComponent(pin)}`);
+    const data = await res.json();
+    if (!data.ok) { showLoginError(data.error || 'Login failed'); return; }
+    session = { facility: data.admin ? facility : data.facility, pin };
+    ALL_PATIENTS = data.patients;
+    sessionStorage.setItem('lfu_session', JSON.stringify(session));
+    enterApp();
+  } catch (e) {
+    showLoginError('Connection error. Check that API_URL is set correctly.');
+  }
+}
+
+function enterApp() {
+  document.getElementById('facilityNameHeader').textContent = session.facility;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  initFilters();
+  filtered = [...ALL_PATIENTS];
+  renderTable(); updateStats();
+  startPolling();
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function logout() {
+  sessionStorage.removeItem('lfu_session');
+  clearInterval(pollTimer);
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginPin').value = '';
+}
+
+function startPolling() { pollTimer = setInterval(refreshData, 20000); }
+
+async function refreshData() {
+  try {
+    const res = await fetch(`${API_URL}?action=poll&facility=${encodeURIComponent(session.facility)}&pin=${encodeURIComponent(session.pin)}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    ALL_PATIENTS = data.patients;
+    applyFilters();
+    document.getElementById('lastSyncLabel').textContent = 'Last synced: ' + new Date().toLocaleTimeString();
+    document.getElementById('connDot').classList.add('connected');
+  } catch (e) {
+    document.getElementById('connDot').classList.remove('connected');
+  }
+}
+
+function initFilters() {
+  const districts = [...new Set(ALL_PATIENTS.map(p => p.district).filter(Boolean))].sort();
+  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' +
+    districts.map(d => `<option>${d}</option>`).join('');
+}
+
+function applyFilters() {
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  const district = document.getElementById('fDistrict').value;
+  const status = document.getElementById('fStatus').value;
+  filtered = ALL_PATIENTS.filter(p => {
+    if (district && p.district !== district) return false;
+    if (status === '__blank__' && p.trackStatus) return false;
+    if (status && status !== '__blank__' && p.trackStatus !== status) return false;
+    if (q) {
+      const hay = (p.uid + p.artNo + p.name).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  page = 1;
+  renderTable(); updateStats();
+}
+
+function resetFilters() {
+  document.getElementById('searchBox').value = '';
+  document.getElementById('fDistrict').value = '';
+  document.getElementById('fStatus').value = '';
+  applyFilters();
+}
+
+function updateStats() {
+  const total = ALL_PATIENTS.length;
+  const tracked = ALL_PATIENTS.filter(p => p.trackStatus).length;
+  const pending = total - tracked;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statTracked').textContent = tracked;
+  document.getElementById('statPct').textContent = total > 0 ? ((tracked/total)*100).toFixed(1) + '%' : '0%';
+}
+
+function renderTable() {
+  const start = (page - 1) * pageSize;
+  const pageData = filtered.slice(start, start + pageSize);
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = pageData.map((p, i) => `
+    <tr data-uid="${p.uid}">
+      <td>${start + i + 1}</td>
+      <td class="td-narrow">${p.uid}</td>
+      <td class="td-narrow">${p.artNo}</td>
+      <td class="td-wide">${p.name} <span style="color:var(--muted)">/ ${p.age} / ${p.sex}</span></td>
+      <td>${p.district}</td>
+      <td>${p.block}</td>
+      <td class="td-addr" title="${p.address}">${p.address}</td>
+      <td>${p.contact}</td>
+      <td>${p.artStart}</td>
+      <td>${p.dueDate}</td>
+      <td>${p.lfuFrom}</td>
+      <td><select class="trackStatus" onchange="markUnsaved('${p.uid}')">
+        <option value="">-- Select --</option>
+        ${TRACK_STATUS_OPTIONS.map(o => `<option ${p.trackStatus===o?'selected':''}>${o}</option>`).join('')}
+      </select></td>
+      <td><input type="date" class="trackDate" value="${toIso(p.trackDate)}" onchange="markUnsaved('${p.uid}')"></td>
+      <td><select class="trackBy" onchange="markUnsaved('${p.uid}')">
+        <option value="">--</option>
+        ${TRACK_BY_OPTIONS.map(o => `<option ${p.trackBy===o?'selected':''}>${o}</option>`).join('')}
+      </select></td>
+      <td><input type="text" class="remarks" value="${(p.remarks||'').replace(/"/g,'&quot;')}" onchange="markUnsaved('${p.uid}')"></td>
+      <td><button class="save-btn saved" onclick="saveRow('${p.uid}', this)">Save</button></td>
+    </tr>`).join('');
+
+  document.getElementById('pageInfo').textContent = `Page ${page} of ${Math.max(1, Math.ceil(filtered.length / pageSize))} (${filtered.length} records)`;
+}
+
+function markUnsaved(uid) {
+  const row = document.querySelector(`tr[data-uid="${uid}"]`);
+  const btn = row.querySelector('.save-btn');
+  btn.classList.remove('saved'); btn.classList.add('unsaved');
+}
+
+async function saveRow(uid, btn) {
+  const row = btn.closest('tr');
+  const trackStatus = row.querySelector('.trackStatus').value;
+  const trackDate = fromIso(row.querySelector('.trackDate').value);
+  const trackBy = row.querySelector('.trackBy').value;
+  const remarks = row.querySelector('.remarks').value;
+  btn.textContent = '…';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'updateRecord', facility: session.facility, pin: session.pin, uid, trackStatus, trackDate, trackBy, remarks })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = 'Save'; btn.classList.remove('unsaved'); btn.classList.add('saved');
+      const p = ALL_PATIENTS.find(x => x.uid === uid);
+      if (p) { p.trackStatus = trackStatus; p.trackDate = trackDate; p.trackBy = trackBy; p.remarks = remarks; }
+      updateStats();
+    } else {
+      btn.textContent = 'Save'; alert('Save failed: ' + data.error);
+    }
+  } catch (e) {
+    btn.textContent = 'Save'; alert('Network error while saving. Please retry.');
+  }
+}
+
+function toIso(d) {
+  if (!d) return '';
+  const m = d.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+function fromIso(d) {
+  if (!d) return '';
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+
+function prevPage() { if (page > 1) { page--; renderTable(); } }
+function nextPage() { if (page * pageSize < filtered.length) { page++; renderTable(); } }
+function changePageSize(v) { pageSize = parseInt(v); page = 1; renderTable(); }
+
+function exportExcel() {
+  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','District','Block','Address','Contact','ART Start','Due Date','LFU From','Track Status','Track Date','Track By','Remarks']];
+  filtered.forEach((p,i) => ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.district,p.block,p.address,p.contact,p.artStart,p.dueDate,p.lfuFrom,p.trackStatus,p.trackDate,p.trackBy,p.remarks]));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'LFU Tracker');
+  XLSX.writeFile(wb, `LFU_Tracker_${session.facility}.xlsx`);
+}
+
+loadFacilityList();
+const savedSession = sessionStorage.getItem('lfu_session');
+if (savedSession) {
+  session = JSON.parse(savedSession);
+  refreshData().then(enterApp);
+}
+</script>
+</body>
+</html>
