@@ -88,7 +88,7 @@ header h1{font-size:17px;font-weight:700}
   <input type="month" id="reportMonthInput" style="font-size:12px;padding:4px 6px;border:1px solid #FFE082;border-radius:6px">
   <input type="file" id="mllFile" accept=".xlsx,.xls,.csv">
   <button class="btn btn-success" onclick="uploadMonthlyList()">Upload &amp; Push to Facilities</button>
-  <span class="upload-status" id="uploadStatus">File columns expected: UID, ART No., Name, Age, Sex, State, District, Block, Address, Contact, Facility, ART Start, Due Date, LFU From</span>
+  <span class="upload-status" id="uploadStatus">You can upload the raw monthly MLL directly — it will auto-detect it and extract On-ART-LFU cases for your facilities. (Or upload an already-filtered list with columns: UID, ART No., Name, Age, Sex, State, District, Block, Address, Contact, Facility, ART Start, Due Date, LFU From.)</span>
 </div>
 
 <!-- Report Modal -->
@@ -451,38 +451,25 @@ function uploadMonthlyList() {
     try {
       const wb = XLSX.read(e.target.result, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
-      // Flexible header matching: accept either the Tracker's internal
-      // field names or human-readable column headers.
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false });
+      if (rows.length === 0) { statusEl.textContent = 'File appears to be empty.'; return; }
+
       const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
-      const fieldMap = {
-        uid:['uid'], artno:['artno','artnumber','artregno','artregnoifinitiatedonart'],
-        name:['name','nameofpatient','patientname'], age:['age'], sex:['sex','gender'],
-        state:['state'], district:['district'], block:['block','taluk','taluktehsil'], address:['address','completeaddress'],
-        contact:['contact','contactnumber','phone'], facility:['facility','facilityname'],
-        artstart:['artstart','dateofstartofart'], duedate:['duedate'], lfufrom:['lfufrom']
-      };
-      function pick(row, keys) {
-        const rowKeys = Object.keys(row);
-        for (const want of keys) {
-          const found = rowKeys.find(k => norm(k) === want);
-          if (found) return row[found];
-        }
-        return '';
+      const headerKeys = Object.keys(rows[0]).map(norm);
+      const isRawMll = headerKeys.includes('statusinartcare') && headerKeys.includes('facilityname');
+
+      let records;
+      if (isRawMll) {
+        statusEl.textContent = 'Detected the raw MLL — extracting On-ART-LFU cases for your facilities…';
+        records = await extractLfuFromMll(rows);
+        if (records === null) return; // extractLfuFromMll already set an error message
+        statusEl.textContent = `Found ${records.length} active On-ART-LFU case(s) across your facilities. Uploading…`;
+      } else {
+        records = extractFromSimpleList(rows);
+        if (records.length === 0) { statusEl.textContent = 'No valid rows found — check the column headers.'; return; }
+        statusEl.textContent = `Uploading ${records.length} records for ${reportMonth}…`;
       }
-      const records = rows.map(row => ({
-        uid: pick(row, fieldMap.uid), artNo: pick(row, fieldMap.artno),
-        name: pick(row, fieldMap.name), age: pick(row, fieldMap.age), sex: pick(row, fieldMap.sex),
-        state: pick(row, fieldMap.state) || 'ASSAM',
-        district: pick(row, fieldMap.district), block: pick(row, fieldMap.block),
-        address: pick(row, fieldMap.address), contact: pick(row, fieldMap.contact),
-        facility: pick(row, fieldMap.facility), artStart: pick(row, fieldMap.artstart),
-        dueDate: pick(row, fieldMap.duedate), lfuFrom: pick(row, fieldMap.lfufrom)
-      })).filter(r => r.uid);
 
-      if (records.length === 0) { statusEl.textContent = 'No valid rows found — check the column headers.'; return; }
-
-      statusEl.textContent = `Uploading ${records.length} records for ${reportMonth}…`;
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -501,6 +488,128 @@ function uploadMonthlyList() {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+/* ---------- Mode 1: already-filtered LFU list (Tracker's own columns) ---------- */
+function extractFromSimpleList(rows) {
+  const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
+  const fieldMap = {
+    uid:['uid'], artno:['artno','artnumber','artregno','artregnoifinitiatedonart'],
+    name:['name','nameofpatient','patientname'], age:['age'], sex:['sex','gender'],
+    state:['state'], district:['district'], block:['block','taluk','taluktehsil'], address:['address','completeaddress'],
+    contact:['contact','contactnumber','phone'], facility:['facility','facilityname'],
+    artstart:['artstart','dateofstartofart'], duedate:['duedate'], lfufrom:['lfufrom']
+  };
+  function pick(row, keys) {
+    const rowKeys = Object.keys(row);
+    for (const want of keys) {
+      const found = rowKeys.find(k => norm(k) === want);
+      if (found) return row[found];
+    }
+    return '';
+  }
+  return rows.map(row => ({
+    uid: pick(row, fieldMap.uid), artNo: pick(row, fieldMap.artno),
+    name: pick(row, fieldMap.name), age: pick(row, fieldMap.age), sex: pick(row, fieldMap.sex),
+    state: pick(row, fieldMap.state) || 'ASSAM',
+    district: pick(row, fieldMap.district), block: pick(row, fieldMap.block),
+    address: pick(row, fieldMap.address), contact: pick(row, fieldMap.contact),
+    facility: pick(row, fieldMap.facility), artStart: pick(row, fieldMap.artstart),
+    dueDate: pick(row, fieldMap.duedate), lfuFrom: pick(row, fieldMap.lfufrom)
+  })).filter(r => r.uid);
+}
+
+/* ---------- Mode 2: raw MLL — auto-extract On-ART-LFU cases ---------- */
+async function extractLfuFromMll(rows) {
+  const statusEl = document.getElementById('uploadStatus');
+
+  // Fetch the canonical facility list (the same ones in your Facilities sheet)
+  // so we only keep MLL rows belonging to a facility you actually manage,
+  // and so the facility name written back matches exactly (for PIN-based access).
+  let canonicalFacilities;
+  try {
+    const res = await fetch(`${API_URL}?action=facilityList`);
+    const data = await res.json();
+    canonicalFacilities = data.facilities || [];
+  } catch (e) {
+    statusEl.textContent = '❌ Could not load your facility list to match against — try again.';
+    return null;
+  }
+  const facilityLookup = {};
+  canonicalFacilities.forEach(f => { facilityLookup[normFacilityName(f)] = f; });
+
+  function normFacilityName(s) {
+    return String(s).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  // MLL exports have been seen in both dd-mm-yyyy and yyyy-mm-dd — normalize
+  // everything to dd-mm-yyyy (the format already used throughout the sheet).
+  function parseAnyDate(str) {
+    const s = String(str || '').trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);          // yyyy-mm-dd
+    if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+    m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);               // dd-mm-yyyy
+    if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);             // dd/mm/yyyy
+    if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+    return null;
+  }
+  function fmtDdMmYyyy(d) {
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    return `${dd}-${mm}-${d.getFullYear()}`;
+  }
+  function normalizeDate(str) {
+    const d = parseAnyDate(str);
+    return d && !isNaN(d.getTime()) ? fmtDdMmYyyy(d) : String(str || '').trim();
+  }
+  function addDaysToDdMmYyyy(dateStr, days) {
+    const d = parseAnyDate(dateStr);
+    if (!d || isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days);
+    return fmtDdMmYyyy(d);
+  }
+
+  const records = [];
+  let skippedStatus = 0, skippedFacility = 0;
+
+  rows.forEach(row => {
+    const status = String(row['Status in ART care'] || '').trim();
+    // Only the current "On-ART-LFU" status — explicitly excluding the
+    // "On-ART-LFU (before 2010)" and "On-ART-LFU (before 2016)" variants.
+    if (status.toLowerCase() !== 'on-art-lfu') { skippedStatus++; return; }
+
+    const rawFacility = String(row['Facility Name'] || '').trim();
+    const canonicalFacility = facilityLookup[normFacilityName(rawFacility)];
+    if (!canonicalFacility) { skippedFacility++; return; }
+
+    const dueDate = normalizeDate(row['Due Date of visit at ARTC']);
+    records.push({
+      uid: String(row['SNo.'] || '').trim(),
+      artNo: String(row['ART Reg No. (If initiated on ART)'] || '').trim(),
+      name: String(row['Name of Patient'] || '').trim(),
+      age: String(row['Age'] || '').trim(),
+      sex: String(row['Sex'] || '').trim(),
+      state: String(row['State'] || '').trim() || 'ASSAM',
+      district: String(row['District'] || '').trim(),
+      block: String(row['Taluk/Tehsil'] || '').trim(),
+      address: String(row['Complete Address'] || '').trim(),
+      contact: String(row['Contact Number'] || '').trim(),
+      facility: canonicalFacility,
+      artStart: normalizeDate(row['Date of Start of ART']),
+      dueDate: dueDate,
+      lfuFrom: dueDate ? addDaysToDdMmYyyy(dueDate, 29) : ''
+    });
+  });
+
+  if (records.length === 0) {
+    statusEl.textContent = `No matching rows found. Checked ${rows.length} rows: ${skippedStatus} were not "On-ART-LFU" status (current), ${skippedFacility} were not one of your facilities. Double check the MLL covers the right period and facility names.`;
+    return null;
+  }
+  if (skippedFacility > 0) {
+    console.warn(`${skippedFacility} On-ART-LFU rows were skipped because their Facility Name didn't match your Facilities sheet exactly.`);
+  }
+  return records.filter(r => r.uid);
 }
 
 /* ---------- Init ---------- */
