@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Viral Load Testing &amp; Monitoring Tracker – ASACS</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--primary:#1565C0;--secondary:#0D47A1;--accent:#26C6DA;--success:#2E7D32;--warning:#F57F17;--danger:#C62828;--orange:#E65100;--purple:#6A1B9A;--bg:#F0F4FF;--card:#fff;--border:#CFD8DC;--text:#212121;--muted:#607D8B}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+header{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+header h1{font-size:15px;font-weight:700}
+.conn-indicator{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
+.conn-dot{width:10px;height:10px;border-radius:50%;background:#ef5350}
+.conn-dot.connected{background:#66BB6A}
+.stats-bar{display:flex;gap:10px;padding:10px 16px;flex-wrap:wrap}
+.stat-card{background:var(--card);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;align-items:center;min-width:120px;flex:1;box-shadow:0 1px 4px rgba(0,0,0,.1);border-top:3px solid var(--primary)}
+.stat-card .val{font-size:19px;font-weight:700;color:var(--primary)}
+.stat-card .lbl{font-size:10px;color:var(--muted);margin-top:2px;text-align:center;line-height:1.3}
+.stat-card.suppressed{border-top-color:var(--success)} .stat-card.suppressed .val{color:var(--success)}
+.stat-card.unsuppressed{border-top-color:var(--danger)} .stat-card.unsuppressed .val{color:var(--danger)}
+.stat-card.due{border-top-color:var(--warning)} .stat-card.due .val{color:var(--warning)}
+.stat-card.overdue{border-top-color:var(--orange)} .stat-card.overdue .val{color:var(--orange)}
+.stat-card.never{border-top-color:#455A64} .stat-card.never .val{color:#455A64}
+.stat-card.eac{border-top-color:var(--purple)} .stat-card.eac .val{color:var(--purple)}
+.stat-card.repeat{border:3px solid var(--accent);background:linear-gradient(135deg,#E0F7FA,#fff)} .stat-card.repeat .val{color:#00838F}
+.toolbar{background:var(--card);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input,.toolbar select{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;outline:none}
+.btn{border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:4px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-warning{background:var(--warning);color:#fff}
+.btn-muted{background:#ECEFF1;color:var(--text)}
+.btn:hover{opacity:.85}
+.filter-row{background:#E3F2FD;padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)}
+.filter-row select,.filter-row input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.filter-group{display:flex;gap:6px;align-items:center}
+.filter-label{font-size:11px;font-weight:600;color:var(--secondary)}
+.table-wrap{overflow:auto;max-height:calc(100vh - 360px);padding:0 16px 16px}
+table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+thead tr{background:var(--primary);color:#fff;position:sticky;top:0;z-index:10}
+th{padding:7px 5px;white-space:nowrap;font-weight:600;font-size:10.5px}
+td{padding:5px;border-bottom:1px solid #ECEFF1;vertical-align:middle;white-space:nowrap}
+tr:hover td{background:#E3F2FD}
+.td-wide{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.td-addr{max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td select,td input[type=date],td input[type=text],td input[type=number]{border:1px solid var(--border);border-radius:4px;padding:3px 4px;font-size:11px}
+.vl-value-cell{display:flex;gap:3px;align-items:center}
+.vl-value-cell select{width:62px}
+.vl-value-cell input[type=number]{width:70px}
+.badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap}
+.badge-elig{background:#C8E6C9;color:#1B5E20}
+.badge-notelig{background:#ECEFF1;color:#455A64}
+.save-btn{border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;font-weight:600;width:56px}
+.save-btn.unsaved{background:#ef5350;color:#fff}
+.save-btn.saved{background:#43A047;color:#fff}
+.pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:8px 16px;background:#fff;border-top:1px solid var(--border)}
+.pager span{font-size:12px;color:var(--muted)}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+.login-box{background:#fff;border-radius:14px;padding:32px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.login-box h2{color:var(--primary);margin-bottom:6px;font-size:17px}
+.login-box p{color:var(--muted);font-size:12px;margin-bottom:18px}
+.login-box select,.login-box input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px}
+.login-box button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+.login-error{color:var(--danger);font-size:12px;margin-top:-6px;margin-bottom:10px;display:none}
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginScreen">
+  <div class="login-box">
+    <h2>🧪 Viral Load Testing &amp; Monitoring Tracker</h2>
+    <p>Select your facility and enter your PIN to view and update your VL list.</p>
+    <select id="loginFacility"><option value="">Loading facilities…</option></select>
+    <input type="password" id="loginPin" placeholder="Facility PIN" inputmode="numeric">
+    <div class="login-error" id="loginError">Invalid facility or PIN. Please try again.</div>
+    <button onclick="doLogin()">Log In</button>
+  </div>
+</div>
+
+<div id="appScreen" style="display:none">
+<header>
+  <div><h1>🧪 Viral Load Testing &amp; Monitoring Tracker &nbsp;|&nbsp; <span id="facilityNameHeader"></span></h1></div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="btn btn-muted" onclick="refreshData()" style="color:var(--primary)">🔄 Refresh</button>
+    <div class="conn-indicator"><div class="conn-dot connected" id="connDot"></div><span id="connLabel">Live</span></div>
+    <button class="btn btn-muted" onclick="logout()" style="color:var(--primary)">Log Out</button>
+  </div>
+</header>
+
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="toolbar">
+  <input type="text" id="searchBox" placeholder="🔍 Search UID / Name / ART No..." style="width:260px" oninput="applyFilters()">
+  <button class="btn btn-success" onclick="exportExcel()">⬇ Export Excel</button>
+  <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+    <span id="lastSyncLabel" style="font-size:11px;color:var(--muted)"></span>
+  </div>
+</div>
+
+<div class="filter-row">
+  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Block:</span><select id="fBlock" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Eligible:</span><select id="fEligible" onchange="applyFilters()"><option value="">All</option><option>Eligible</option><option>Not Eligible</option></select></div>
+  <div class="filter-group"><span class="filter-label">VL Test Status:</span>
+    <select id="fStatus" onchange="applyFilters()">
+      <option value="">All</option>
+      <option>VL Tested</option><option>Due for VL Test</option><option>Over Due for VL Test</option>
+      <option>VL Never Tested</option><option>EAC &amp; Due for Repeat VL Test</option>
+    </select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Action Taken:</span>
+    <select id="fAction" onchange="applyFilters()">
+      <option value="">All</option>
+      <option>on EAC</option><option>Not on EAC</option><option>Sample collected</option><option>Sample not collected</option>
+      <option>Tested</option><option>Tested for Repeat VL</option><option>Not Tested</option><option>Result Pending</option>
+    </select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Outcome:</span>
+    <select id="fOutcome" onchange="applyFilters()"><option value="">All</option><option>VL Suppressed</option><option>VL Unsuppressed</option><option>Error</option></select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Due From:</span><input type="date" id="fDueFrom" onchange="applyFilters()"></div>
+  <div class="filter-group"><span class="filter-label">To:</span><input type="date" id="fDueTo" onchange="applyFilters()"></div>
+  <button class="btn btn-warning" onclick="resetFilters()">Reset</button>
+</div>
+
+<div class="table-wrap">
+<table id="mainTable">
+<thead>
+<tr>
+  <th>Sl.</th><th>UID</th><th>ART No.</th><th>Name/Age/Sex</th>
+  <th>District</th><th>Block</th><th>Address</th><th>Contact</th>
+  <th>ART Start</th><th>Eligible</th>
+  <th>VL Test Status</th><th>Date of Latest VL Test</th><th>Latest VL Test</th>
+  <th>Latest VL Outcome</th><th>Due Date of VL Test</th><th>Action Taken</th><th>Remarks</th><th>Save</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+<div class="pager">
+  <button class="btn btn-muted" onclick="prevPage()">◀ Prev</button>
+  <span id="pageInfo">Page 1</span>
+  <button class="btn btn-muted" onclick="nextPage()">Next ▶</button>
+  <select id="pageSizeSelect" onchange="changePageSize(this.value)" style="border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+    <option value="50">50/page</option><option value="100">100/page</option><option value="200">200/page</option>
+  </select>
+</div>
+</div>
+
+<script>
+/* =====================================================================
+   Uses the SAME Apps Script Web App URL as the LFU Tracker (Code.gs
+   was extended with vlLogin / vlPoll / vlUpdateRecord / vlUploadList).
+   ===================================================================== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbymMJuNwJz0PXeamxMyTUJWrrtw1gcFBya3Kh4meuIAu9rKkj5HdMZg2jISuRgih6EqWA/exec';
+
+const VL_STATUS_OPTIONS = ['VL Tested','Due for VL Test','Over Due for VL Test','VL Never Tested','EAC & Due for Repeat VL Test'];
+const ACTION_OPTIONS = ['on EAC','Not on EAC','Sample collected','Sample not collected','Tested','Tested for Repeat VL','Not Tested','Result Pending'];
+const OUTCOME_OPTIONS = ['VL Suppressed','VL Unsuppressed','Error'];
+
+let session = { facility: '', pin: '' };
+let ALL_PATIENTS = [];
+let filtered = [];
+let page = 1, pageSize = 50;
+let pollTimer = null;
+
+/* ---------- VL business logic (shared shape with the Dashboard) ---------- */
+function parseDmy(s) {
+  const m = String(s || '').match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  return m ? new Date(+m[3], +m[2]-1, +m[1]) : null;
+}
+function fmtDmy(d) {
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+}
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function isEligible(p, today) {
+  if (p.artStatus !== 'On-ART' && p.artStatus !== 'On-ART-MIS') return false;
+  const start = parseDmy(p.artStart);
+  if (!start) return false;
+  const sixMo = new Date(start); sixMo.setMonth(sixMo.getMonth()+6);
+  return today >= sixMo;
+}
+
+function parseVlNumeric(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/tnd/i.test(s)) return 0;
+  if (/error/i.test(s)) return null;
+  let m = s.match(/^<\s*(\d+(\.\d+)?)/);
+  if (m) return parseFloat(m[1]);
+  m = s.match(/^(\d+(\.\d+)?)\s*log/i);
+  if (m) return Math.pow(10, parseFloat(m[1]));
+  m = s.match(/^\d+(\.\d+)?$/);
+  if (m) return parseFloat(s);
+  return null;
+}
+function autoOutcomeFromValue(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/error/i.test(s)) return 'Error';
+  const n = parseVlNumeric(s);
+  if (n === null) return 'Error';
+  return n <= 1000 ? 'VL Suppressed' : 'VL Unsuppressed';
+}
+
+/* effective = stored value if present, else the auto-computed suggestion */
+function effectiveOutcome(p) {
+  return p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue);
+}
+function statusAndDueDate(p, today) {
+  if (!p.latestVLDate) return { status: 'VL Never Tested', dueDate: '' };
+  const testDate = parseDmy(p.latestVLDate);
+  if (!testDate) return { status: 'VL Never Tested', dueDate: '' };
+  const outcome = effectiveOutcome(p);
+  const daysSince = Math.floor((today - testDate) / 86400000);
+  let dueDateObj;
+  if (outcome === 'VL Unsuppressed') dueDateObj = addDays(testDate, 91);
+  else if (outcome === 'Error') dueDateObj = addDays(testDate, 30);
+  else dueDateObj = addDays(testDate, 365);
+
+  let status;
+  if (outcome === 'VL Unsuppressed' && daysSince >= 91) status = 'EAC & Due for Repeat VL Test';
+  else if (daysSince <= 365) status = 'VL Tested';
+  else if (daysSince <= 397) status = 'Due for VL Test';
+  else status = 'Over Due for VL Test';
+
+  return { status, dueDate: fmtDmy(dueDateObj) };
+}
+function effectiveStatus(p, today) {
+  return p.vlTestStatus || statusAndDueDate(p, today).status;
+}
+
+/* ---------- Login ---------- */
+async function loadFacilityList() {
+  try {
+    const res = await fetch(`${API_URL}?action=facilityList`);
+    const data = await res.json();
+    const sel = document.getElementById('loginFacility');
+    sel.innerHTML = '<option value="">Select your facility…</option>' +
+      data.facilities.sort().map(f => `<option value="${f}">${f}</option>`).join('');
+  } catch (e) {
+    document.getElementById('loginFacility').innerHTML = '<option value="">Could not load — check API_URL</option>';
+  }
+}
+
+async function doLogin() {
+  const facility = document.getElementById('loginFacility').value;
+  const pin = document.getElementById('loginPin').value.trim();
+  if (!facility || !pin) { showLoginError('Please select a facility and enter your PIN.'); return; }
+  try {
+    const res = await fetch(`${API_URL}?action=vlLogin&facility=${encodeURIComponent(facility)}&pin=${encodeURIComponent(pin)}`);
+    const data = await res.json();
+    if (!data.ok) { showLoginError(data.error || 'Login failed'); return; }
+    session = { facility: data.admin ? facility : data.facility, pin };
+    ALL_PATIENTS = data.patients;
+    sessionStorage.setItem('vl_session', JSON.stringify(session));
+    enterApp();
+  } catch (e) {
+    showLoginError('Connection error. Check that API_URL is set correctly.');
+  }
+}
+
+function enterApp() {
+  document.getElementById('facilityNameHeader').textContent = session.facility;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  initFilters();
+  filtered = [...ALL_PATIENTS];
+  renderTable(); updateStats();
+  startPolling();
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function logout() {
+  sessionStorage.removeItem('vl_session');
+  clearInterval(pollTimer);
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginPin').value = '';
+}
+
+function startPolling() { pollTimer = setInterval(refreshData, 20000); }
+
+async function refreshData() {
+  try {
+    const res = await fetch(`${API_URL}?action=vlPoll&facility=${encodeURIComponent(session.facility)}&pin=${encodeURIComponent(session.pin)}`);
+    const data = await res.json();
+    if (!data.ok) return;
+    ALL_PATIENTS = data.patients;
+    applyFilters();
+    document.getElementById('lastSyncLabel').textContent = 'Last synced: ' + new Date().toLocaleTimeString();
+    document.getElementById('connDot').classList.add('connected');
+  } catch (e) {
+    document.getElementById('connDot').classList.remove('connected');
+  }
+}
+
+/* ---------- Filters ---------- */
+function initFilters() {
+  const districts = [...new Set(ALL_PATIENTS.map(p => p.district).filter(Boolean))].sort();
+  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  cascadeBlock();
+}
+function cascadeBlock() {
+  const district = document.getElementById('fDistrict').value;
+  const pool = district ? ALL_PATIENTS.filter(p => p.district === district) : ALL_PATIENTS;
+  const blocks = [...new Set(pool.map(p => p.block).filter(Boolean))].sort();
+  document.getElementById('fBlock').innerHTML = '<option value="">All</option>' + blocks.map(b => `<option>${b}</option>`).join('');
+}
+
+function applyFilters() {
+  const today = new Date();
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  const district = document.getElementById('fDistrict').value;
+  const block = document.getElementById('fBlock').value;
+  const eligibleSel = document.getElementById('fEligible').value;
+  const statusSel = document.getElementById('fStatus').value;
+  const actionSel = document.getElementById('fAction').value;
+  const outcomeSel = document.getElementById('fOutcome').value;
+  const dueFrom = document.getElementById('fDueFrom').value ? new Date(document.getElementById('fDueFrom').value) : null;
+  const dueTo = document.getElementById('fDueTo').value ? new Date(document.getElementById('fDueTo').value) : null;
+
+  filtered = ALL_PATIENTS.filter(p => {
+    if (district && p.district !== district) return false;
+    if (block && p.block !== block) return false;
+    const elig = isEligible(p, today);
+    if (eligibleSel === 'Eligible' && !elig) return false;
+    if (eligibleSel === 'Not Eligible' && elig) return false;
+    if (statusSel && effectiveStatus(p, today) !== statusSel) return false;
+    if (actionSel && p.actionTaken !== actionSel) return false;
+    if (outcomeSel && effectiveOutcome(p) !== outcomeSel) return false;
+    if (dueFrom || dueTo) {
+      const sd = statusAndDueDate(p, today);
+      const dd = parseDmy(sd.dueDate);
+      if (!dd) return false;
+      if (dueFrom && dd < dueFrom) return false;
+      if (dueTo && dd > dueTo) return false;
+    }
+    if (q) {
+      const hay = (p.uid + p.artNo + p.name).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  page = 1;
+  renderTable(); updateStats();
+}
+
+function resetFilters() {
+  document.getElementById('searchBox').value = '';
+  document.getElementById('fDistrict').value = '';
+  cascadeBlock();
+  ['fBlock','fEligible','fStatus','fAction','fOutcome'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('fDueFrom').value = '';
+  document.getElementById('fDueTo').value = '';
+  applyFilters();
+}
+
+/* ---------- Stats (computed against the CURRENT filtered set) ---------- */
+function updateStats() {
+  const today = new Date();
+  const pool = filtered;
+  const totalOnArtMis = pool.length;
+  const eligible = pool.filter(p => isEligible(p, today));
+  const eligibleCount = eligible.length;
+
+  const tested365 = eligible.filter(p => {
+    const d = parseDmy(p.latestVLDate);
+    return d && Math.floor((today - d)/86400000) <= 365;
+  });
+  const suppressed = tested365.filter(p => effectiveOutcome(p) === 'VL Suppressed');
+  const unsuppressed = tested365.filter(p => effectiveOutcome(p) === 'VL Unsuppressed');
+  const due = eligible.filter(p => effectiveStatus(p, today) === 'Due for VL Test');
+  const overdue = eligible.filter(p => effectiveStatus(p, today) === 'Over Due for VL Test');
+  const never = eligible.filter(p => !p.latestVLDate);
+  const eacDue = eligible.filter(p => effectiveStatus(p, today) === 'EAC & Due for Repeat VL Test');
+  const repeatDone = pool.filter(p => p.actionTaken === 'Tested for Repeat VL');
+
+  const pct = (n, d) => d > 0 ? ((n/d)*100).toFixed(1) : '0';
+
+  const cards = [
+    { cls:'', val: totalOnArtMis, lbl:'Total On-ART + MIS' },
+    { cls:'', val: eligibleCount, lbl:'Eligible for VL Test' },
+    { cls:'', val: `${tested365.length} (${pct(tested365.length, eligibleCount)}%)`, lbl:'VL Test Done in last 365 days' },
+    { cls:'suppressed', val: `${suppressed.length} (${pct(suppressed.length, tested365.length)}%)`, lbl:'VL Suppressed (of Tested)' },
+    { cls:'unsuppressed', val: `${unsuppressed.length} (${pct(unsuppressed.length, tested365.length)}%)`, lbl:'VL Unsuppressed (of Tested)' },
+    { cls:'due', val: due.length, lbl:'Due for VL Test' },
+    { cls:'overdue', val: overdue.length, lbl:'Over Due for VL Test' },
+    { cls:'never', val: never.length, lbl:'VL Never Tested' },
+    { cls:'eac', val: eacDue.length, lbl:'EAC & Due for Repeat VL Test' },
+    { cls:'repeat', val: `${repeatDone.length} (${pct(repeatDone.length, eacDue.length)}%)`, lbl:'Repeat VL Test Done' }
+  ];
+  document.getElementById('statsBar').innerHTML = cards.map(c =>
+    `<div class="stat-card ${c.cls}"><div class="val">${c.val}</div><div class="lbl">${c.lbl}</div></div>`).join('');
+}
+
+/* ---------- Table render ---------- */
+function renderTable() {
+  const today = new Date();
+  const start = (page - 1) * pageSize;
+  const pageData = filtered.slice(start, start + pageSize);
+  const tbody = document.getElementById('tableBody');
+
+  tbody.innerHTML = pageData.map((p, i) => {
+    const elig = isEligible(p, today);
+    const sd = statusAndDueDate(p, today);
+    const status = p.vlTestStatus || sd.status;
+    const outcome = p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue);
+
+    let valType = 'TND', valNum = '';
+    const raw = String(p.latestVLValue || '').trim();
+    if (/error/i.test(raw)) valType = 'Error';
+    else if (raw && !/tnd/i.test(raw)) { valType = 'NUM'; const n = parseVlNumeric(raw); valNum = (n !== null ? n : ''); }
+
+    return `
+    <tr data-uid="${p.uid}">
+      <td>${start + i + 1}</td>
+      <td>${p.uid}</td>
+      <td>${p.artNo}</td>
+      <td class="td-wide">${p.name} <span style="color:var(--muted)">/ ${p.age} / ${p.sex}</span></td>
+      <td>${p.district}</td>
+      <td>${p.block}</td>
+      <td class="td-addr" title="${p.address}">${p.address}</td>
+      <td>${p.contact}</td>
+      <td>${p.artStart}</td>
+      <td><span class="badge ${elig?'badge-elig':'badge-notelig'}">${elig?'Eligible':'Not Eligible'}</span></td>
+      <td><select class="vlStatus" onchange="markUnsaved('${p.uid}')">
+        ${VL_STATUS_OPTIONS.map(o => `<option ${status===o?'selected':''}>${o}</option>`).join('')}
+      </select></td>
+      <td><input type="date" class="vlDate" value="${toIso(p.latestVLDate)}" onchange="onVlDateOrOutcomeChange(this);markUnsaved('${p.uid}')"></td>
+      <td><div class="vl-value-cell">
+        <select class="vlValueType" onchange="onVlValueChange(this);markUnsaved('${p.uid}')">
+          <option value="TND" ${valType==='TND'?'selected':''}>TND</option>
+          <option value="NUM" ${valType==='NUM'?'selected':''}>Value</option>
+          <option value="Error" ${valType==='Error'?'selected':''}>Error</option>
+        </select>
+        <input type="number" class="vlValueNum" placeholder="copies/mL" value="${valNum}" style="${valType==='NUM'?'':'display:none'}" onchange="onVlValueChange(this.closest('.vl-value-cell').querySelector('.vlValueType'));markUnsaved('${p.uid}')">
+      </div></td>
+      <td><select class="vlOutcome" onchange="onVlDateOrOutcomeChange(this);markUnsaved('${p.uid}')">
+        <option value="">--</option>
+        ${OUTCOME_OPTIONS.map(o => `<option ${outcome===o?'selected':''}>${o}</option>`).join('')}
+      </select></td>
+      <td class="dueDateDisplay">${sd.dueDate}</td>
+      <td><select class="actionTaken" onchange="markUnsaved('${p.uid}')">
+        <option value="">--</option>
+        ${ACTION_OPTIONS.map(o => `<option ${p.actionTaken===o?'selected':''}>${o}</option>`).join('')}
+      </select></td>
+      <td><input type="text" class="remarks" value="${(p.remarks||'').replace(/"/g,'&quot;')}" onchange="markUnsaved('${p.uid}')"></td>
+      <td><button class="save-btn saved" onclick="saveRow('${p.uid}', this)">Save</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('pageInfo').textContent = `Page ${page} of ${Math.max(1, Math.ceil(filtered.length / pageSize))} (${filtered.length} records)`;
+}
+
+/* Live recompute of Outcome/Status/DueDate when the VL value or date changes,
+   before saving — mirrors the "auto change" / "auto-suggested" behaviour. */
+function onVlValueChange(typeSelect) {
+  const cell = typeSelect.closest('.vl-value-cell');
+  const numInput = cell.querySelector('.vlValueNum');
+  numInput.style.display = typeSelect.value === 'NUM' ? '' : 'none';
+  const row = typeSelect.closest('tr');
+  const raw = typeSelect.value === 'TND' ? 'TND' : typeSelect.value === 'Error' ? 'Error' : (numInput.value || '');
+  const autoOutcome = autoOutcomeFromValue(raw);
+  if (autoOutcome) row.querySelector('.vlOutcome').value = autoOutcome;
+  recomputeRowStatusAndDueDate(row);
+}
+function onVlDateOrOutcomeChange(el) {
+  recomputeRowStatusAndDueDate(el.closest('tr'));
+}
+function recomputeRowStatusAndDueDate(row) {
+  const dateVal = fromIso(row.querySelector('.vlDate').value);
+  const outcome = row.querySelector('.vlOutcome').value;
+  const fakePatient = { latestVLDate: dateVal, latestVLOutcome: outcome, latestVLValue: '' };
+  const sd = statusAndDueDate(fakePatient, new Date());
+  row.querySelector('.dueDateDisplay').textContent = sd.dueDate;
+  if (dateVal) row.querySelector('.vlStatus').value = sd.status;
+}
+
+function markUnsaved(uid) {
+  const row = document.querySelector(`tr[data-uid="${uid}"]`);
+  const btn = row.querySelector('.save-btn');
+  btn.classList.remove('saved'); btn.classList.add('unsaved');
+}
+
+async function saveRow(uid, btn) {
+  const row = btn.closest('tr');
+  const vlTestStatus = row.querySelector('.vlStatus').value;
+  const latestVLDate = fromIso(row.querySelector('.vlDate').value);
+  const typeSelect = row.querySelector('.vlValueType');
+  const numInput = row.querySelector('.vlValueNum');
+  let latestVLValue = '';
+  if (typeSelect.value === 'TND') latestVLValue = 'TND';
+  else if (typeSelect.value === 'Error') latestVLValue = 'Error';
+  else latestVLValue = numInput.value || '';
+  const latestVLOutcome = row.querySelector('.vlOutcome').value;
+  const actionTaken = row.querySelector('.actionTaken').value;
+  const remarks = row.querySelector('.remarks').value;
+
+  btn.textContent = '…';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'vlUpdateRecord', facility: session.facility, pin: session.pin, uid,
+        vlTestStatus, latestVLDate, latestVLValue, latestVLOutcome, actionTaken, remarks
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = 'Save'; btn.classList.remove('unsaved'); btn.classList.add('saved');
+      const p = ALL_PATIENTS.find(x => x.uid === uid);
+      if (p) { p.vlTestStatus = vlTestStatus; p.latestVLDate = latestVLDate; p.latestVLValue = latestVLValue; p.latestVLOutcome = latestVLOutcome; p.actionTaken = actionTaken; p.remarks = remarks; }
+      updateStats();
+    } else {
+      btn.textContent = 'Save'; alert('Save failed: ' + data.error);
+    }
+  } catch (e) {
+    btn.textContent = 'Save'; alert('Network error while saving. Please retry.');
+  }
+}
+
+function toIso(d) {
+  const m = String(d || '').match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+function fromIso(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+
+/* ---------- Paging ---------- */
+function prevPage() { if (page > 1) { page--; renderTable(); } }
+function nextPage() { if (page * pageSize < filtered.length) { page++; renderTable(); } }
+function changePageSize(v) { pageSize = parseInt(v); page = 1; renderTable(); }
+
+/* ---------- Export ---------- */
+function exportExcel() {
+  const today = new Date();
+  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','District','Block','Address','Contact','ART Start','Eligible','VL Test Status','Date of Latest VL Test','Latest VL Test','Latest VL Outcome','Due Date of VL Test','Action Taken','Remarks']];
+  filtered.forEach((p,i) => {
+    const elig = isEligible(p, today) ? 'Eligible' : 'Not Eligible';
+    const sd = statusAndDueDate(p, today);
+    ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.district,p.block,p.address,p.contact,p.artStart,elig,
+      p.vlTestStatus || sd.status, p.latestVLDate, p.latestVLValue, p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue),
+      sd.dueDate, p.actionTaken, p.remarks]);
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'VL Tracker');
+  XLSX.writeFile(wb, `VL_Tracker_${session.facility}.xlsx`);
+}
+
+/* ---------- Init ---------- */
+loadFacilityList();
+const savedSession = sessionStorage.getItem('vl_session');
+if (savedSession) {
+  session = JSON.parse(savedSession);
+  refreshData().then(enterApp);
+}
+</script>
+</body>
+</html>

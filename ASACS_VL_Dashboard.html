@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASACS Viral Load Testing &amp; Monitoring Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--primary:#1565C0;--secondary:#0D47A1;--accent:#26C6DA;--success:#2E7D32;--warning:#F57F17;--danger:#C62828;--orange:#E65100;--purple:#6A1B9A;--bg:#F0F4FF;--card:#fff;--border:#CFD8DC;--text:#212121;--muted:#607D8B}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+header{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{font-size:16px;font-weight:700}
+.conn-indicator{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
+.conn-dot{width:10px;height:10px;border-radius:50%;background:#ef5350}
+.conn-dot.connected{background:#66BB6A}
+.btn{border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;font-weight:600}
+.btn-muted{background:rgba(255,255,255,.18);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+.btn-primary{background:var(--accent);color:#0D47A1}
+.btn-warning{background:var(--warning);color:#fff}
+.btn:hover{opacity:.85}
+.upload-bar{background:#FFF8E1;border-bottom:1px solid #FFE082;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.upload-bar b{color:#8D6E00;font-size:12px}
+.upload-bar input[type=file]{font-size:12px}
+.upload-status{font-size:12px;color:var(--muted)}
+.toolbar{background:var(--card);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toolbar input{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px}
+.stats-bar{display:flex;gap:10px;padding:12px 16px;flex-wrap:wrap}
+.stat-card{background:var(--card);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;align-items:center;min-width:130px;flex:1;box-shadow:0 1px 4px rgba(0,0,0,.1);border-top:3px solid var(--primary)}
+.stat-card .val{font-size:20px;font-weight:700;color:var(--primary)}
+.stat-card .lbl{font-size:10px;color:var(--muted);margin-top:2px;text-align:center;line-height:1.3}
+.stat-card.suppressed{border-top-color:var(--success)} .stat-card.suppressed .val{color:var(--success)}
+.stat-card.unsuppressed{border-top-color:var(--danger)} .stat-card.unsuppressed .val{color:var(--danger)}
+.stat-card.due{border-top-color:var(--warning)} .stat-card.due .val{color:var(--warning)}
+.stat-card.overdue{border-top-color:var(--orange)} .stat-card.overdue .val{color:var(--orange)}
+.stat-card.never{border-top-color:#455A64} .stat-card.never .val{color:#455A64}
+.stat-card.eac{border-top-color:var(--purple)} .stat-card.eac .val{color:var(--purple)}
+.stat-card.repeat{border:3px solid var(--accent);background:linear-gradient(135deg,#E0F7FA,#fff)} .stat-card.repeat .val{color:#00838F}
+.filter-row{background:#E3F2FD;padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)}
+.filter-row select,.filter-row input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.filter-group{display:flex;gap:6px;align-items:center}
+.filter-label{font-size:11px;font-weight:600;color:var(--secondary)}
+.charts-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:14px 16px}
+.chart-card{background:var(--card);border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);height:300px}
+.chart-card h3{font-size:13px;color:var(--secondary);margin-bottom:8px}
+@media (max-width:900px){.charts-grid{grid-template-columns:1fr}}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--primary),var(--secondary))}
+.login-box{background:#fff;border-radius:14px;padding:32px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.login-box h2{color:var(--primary);margin-bottom:6px;font-size:17px}
+.login-box p{color:var(--muted);font-size:12px;margin-bottom:18px}
+.login-box input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px}
+.login-box button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;font-size:14px}
+.login-error{color:var(--danger);font-size:12px;margin-top:-6px;margin-bottom:10px;display:none}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-box{background:#fff;border-radius:12px;padding:24px;max-width:1100px;width:95%;max-height:90vh;overflow:auto}
+.modal-box h2{font-size:15px;color:var(--primary);margin-bottom:16px;border-bottom:2px solid var(--primary);padding-bottom:8px}
+.report-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.report-filters select,.report-filters input{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px}
+.report-table-wrap{overflow:auto;max-height:400px}
+.report-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.report-table th{background:var(--primary);color:#fff;padding:6px;text-align:left;position:sticky;top:0;white-space:nowrap}
+.report-table td{padding:5px;border-bottom:1px solid #ECEFF1;white-space:nowrap}
+.report-table tr:nth-child(even) td{background:#F5F5F5}
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="loginScreen">
+  <div class="login-box">
+    <h2>🧪 ASACS VL — PO Dashboard</h2>
+    <p>Enter the State-level Admin PIN to view the live dashboard for all facilities.</p>
+    <input type="password" id="loginPin" placeholder="Admin PIN" inputmode="numeric">
+    <div class="login-error" id="loginError">Invalid PIN.</div>
+    <button onclick="doLogin()">Log In</button>
+  </div>
+</div>
+
+<div id="appScreen" style="display:none">
+<header>
+  <h1>🧪 ASACS Viral Load Testing &amp; Monitoring Dashboard</h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn btn-muted" onclick="refreshDashboard()">🔄 Refresh</button>
+    <button class="btn btn-primary" onclick="openReport()">📊 Reports</button>
+    <div class="conn-indicator"><div class="conn-dot connected" id="connDot"></div><span id="connLabel">Live</span></div>
+    <button class="btn btn-muted" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<div class="upload-bar">
+  <b>📤 Upload Monthly MLL</b>
+  <input type="file" id="mllFile" accept=".xlsx,.xls,.csv">
+  <button class="btn btn-success" onclick="uploadMonthlyMll()">Upload &amp; Push to Facilities</button>
+  <span class="upload-status" id="uploadStatus">Upload the raw monthly MLL directly — it auto-extracts On-ART and On-ART-MIS patients for your facilities, refreshing demographic data and any newer Latest VL Test results.</span>
+</div>
+
+<!-- Report Modal -->
+<div class="modal" id="reportModal">
+<div class="modal-box">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2>📊 Viral Load Report</h2>
+    <button class="btn btn-muted" onclick="closeReport()" style="background:#ECEFF1;color:#212121">✕ Close</button>
+  </div>
+  <div class="report-filters">
+    <select id="rState" onchange="cascadeRDistrict()"><option value="">All States</option></select>
+    <select id="rDistrict" onchange="cascadeRBlock()"><option value="">All Districts</option></select>
+    <select id="rBlock"><option value="">All Blocks</option></select>
+    <select id="rFacility"><option value="">All Facilities</option></select>
+    <select id="rEligible"><option value="">All (Eligible)</option><option>Eligible</option><option>Not Eligible</option></select>
+    <select id="rStatus">
+      <option value="">All VL Test Status</option>
+      <option>VL Tested</option><option>Due for VL Test</option><option>Over Due for VL Test</option>
+      <option>VL Never Tested</option><option>EAC &amp; Due for Repeat VL Test</option>
+    </select>
+    <select id="rAction">
+      <option value="">All Action Taken</option>
+      <option>on EAC</option><option>Not on EAC</option><option>Sample collected</option><option>Sample not collected</option>
+      <option>Tested</option><option>Tested for Repeat VL</option><option>Not Tested</option><option>Result Pending</option>
+    </select>
+    <select id="rOutcome"><option value="">All Outcomes</option><option>VL Suppressed</option><option>VL Unsuppressed</option><option>Error</option></select>
+    <input type="date" id="rFrom" placeholder="Due Date From"><input type="date" id="rTo" placeholder="Due Date To">
+    <button class="btn btn-muted" onclick="rToday()" style="background:#ECEFF1;color:#212121">Today</button>
+    <button class="btn btn-muted" onclick="rThisMonth()" style="background:#ECEFF1;color:#212121">This Month</button>
+    <button class="btn btn-primary" onclick="generateReport()">Generate</button>
+    <button class="btn btn-warning" onclick="resetReport()">Reset</button>
+    <button class="btn btn-success" onclick="downloadReport()">⬇ Excel</button>
+  </div>
+  <div id="reportSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+  <div class="report-table-wrap"><table class="report-table" id="reportTable">
+    <thead><tr><th>Sl.</th><th>UID</th><th>ART No.</th><th>Name</th><th>Age</th><th>Sex</th>
+    <th>State</th><th>District</th><th>Block</th><th>Facility</th><th>ART Start</th><th>Eligible</th>
+    <th>VL Test Status</th><th>Date of Latest VL Test</th><th>Latest VL Test</th><th>Latest VL Outcome</th>
+    <th>Due Date</th><th>Action Taken</th><th>Remarks</th></tr></thead>
+    <tbody id="reportBody"></tbody>
+  </table></div>
+</div>
+</div>
+
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="toolbar">
+  <input type="text" id="searchBox" placeholder="🔍 Search UID / Name / ART No..." style="width:260px" oninput="applyFilters()">
+</div>
+
+<div class="filter-row">
+  <div class="filter-group"><span class="filter-label">State:</span><select id="fState" onchange="cascadeDistrict();applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">District:</span><select id="fDistrict" onchange="cascadeBlock();applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Block:</span><select id="fBlock" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Facility:</span><select id="fFacility" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><span class="filter-label">Eligible:</span><select id="fEligible" onchange="applyFilters()"><option value="">All</option><option>Eligible</option><option>Not Eligible</option></select></div>
+  <div class="filter-group"><span class="filter-label">VL Test Status:</span>
+    <select id="fStatus" onchange="applyFilters()">
+      <option value="">All</option>
+      <option>VL Tested</option><option>Due for VL Test</option><option>Over Due for VL Test</option>
+      <option>VL Never Tested</option><option>EAC &amp; Due for Repeat VL Test</option>
+    </select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Action Taken:</span>
+    <select id="fAction" onchange="applyFilters()">
+      <option value="">All</option>
+      <option>on EAC</option><option>Not on EAC</option><option>Sample collected</option><option>Sample not collected</option>
+      <option>Tested</option><option>Tested for Repeat VL</option><option>Not Tested</option><option>Result Pending</option>
+    </select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Outcome:</span>
+    <select id="fOutcome" onchange="applyFilters()"><option value="">All</option><option>VL Suppressed</option><option>VL Unsuppressed</option><option>Error</option></select>
+  </div>
+  <div class="filter-group"><span class="filter-label">Due From:</span><input type="date" id="fDueFrom" onchange="applyFilters()"></div>
+  <div class="filter-group"><span class="filter-label">To:</span><input type="date" id="fDueTo" onchange="applyFilters()"></div>
+  <button class="btn btn-muted" onclick="fToday()" style="background:#ECEFF1;color:#212121">Today</button>
+  <button class="btn btn-muted" onclick="fThisMonth()" style="background:#ECEFF1;color:#212121">This Month</button>
+  <button class="btn btn-warning" onclick="resetFilters()">Reset</button>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h3>📊 VL Test Status Distribution</h3><canvas id="statusChart"></canvas></div>
+  <div class="chart-card"><h3>🧪 Suppression Outcome (of those Tested)</h3><canvas id="outcomeChart"></canvas></div>
+  <div class="chart-card"><h3>🗺️ Top Districts – Eligible for VL Test</h3><canvas id="districtChart"></canvas></div>
+  <div class="chart-card"><h3>🏨 Facility-wise Eligible vs Tested (365 days)</h3><canvas id="facilityChart"></canvas></div>
+</div>
+</div>
+
+<script>
+/* =====================================================================
+   Uses the SAME Apps Script Web App URL as the LFU system (Code.gs was
+   extended with vlLogin / vlPoll / vlUpdateRecord / vlUploadList).
+   ===================================================================== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbymMJuNwJz0PXeamxMyTUJWrrtw1gcFBya3Kh4meuIAu9rKkj5HdMZg2jISuRgih6EqWA/exec';
+
+let adminPin = '';
+let ALL_PATIENTS = [];
+let filtered = [];
+let charts = {};
+
+/* ---------- VL business logic (identical to the Tracker) ---------- */
+function parseDmy(s) {
+  const m = String(s || '').match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  return m ? new Date(+m[3], +m[2]-1, +m[1]) : null;
+}
+function fmtDmy(d) {
+  return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+}
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function isEligible(p, today) {
+  if (p.artStatus !== 'On-ART' && p.artStatus !== 'On-ART-MIS') return false;
+  const start = parseDmy(p.artStart);
+  if (!start) return false;
+  const sixMo = new Date(start); sixMo.setMonth(sixMo.getMonth()+6);
+  return today >= sixMo;
+}
+function parseVlNumeric(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/tnd/i.test(s)) return 0;
+  if (/error/i.test(s)) return null;
+  let m = s.match(/^<\s*(\d+(\.\d+)?)/);
+  if (m) return parseFloat(m[1]);
+  m = s.match(/^(\d+(\.\d+)?)\s*log/i);
+  if (m) return Math.pow(10, parseFloat(m[1]));
+  m = s.match(/^\d+(\.\d+)?$/);
+  if (m) return parseFloat(s);
+  return null;
+}
+function autoOutcomeFromValue(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/error/i.test(s)) return 'Error';
+  const n = parseVlNumeric(s);
+  if (n === null) return 'Error';
+  return n <= 1000 ? 'VL Suppressed' : 'VL Unsuppressed';
+}
+function effectiveOutcome(p) { return p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue); }
+function statusAndDueDate(p, today) {
+  if (!p.latestVLDate) return { status: 'VL Never Tested', dueDate: '' };
+  const testDate = parseDmy(p.latestVLDate);
+  if (!testDate) return { status: 'VL Never Tested', dueDate: '' };
+  const outcome = effectiveOutcome(p);
+  const daysSince = Math.floor((today - testDate) / 86400000);
+  let dueDateObj;
+  if (outcome === 'VL Unsuppressed') dueDateObj = addDays(testDate, 91);
+  else if (outcome === 'Error') dueDateObj = addDays(testDate, 30);
+  else dueDateObj = addDays(testDate, 365);
+  let status;
+  if (outcome === 'VL Unsuppressed' && daysSince >= 91) status = 'EAC & Due for Repeat VL Test';
+  else if (daysSince <= 365) status = 'VL Tested';
+  else if (daysSince <= 397) status = 'Due for VL Test';
+  else status = 'Over Due for VL Test';
+  return { status, dueDate: fmtDmy(dueDateObj) };
+}
+function effectiveStatus(p, today) { return p.vlTestStatus || statusAndDueDate(p, today).status; }
+
+/* ---------- Login ---------- */
+async function doLogin() {
+  const pin = document.getElementById('loginPin').value.trim();
+  if (!pin) return;
+  try {
+    const res = await fetch(`${API_URL}?action=vlLogin&facility=ADMIN&pin=${encodeURIComponent(pin)}`);
+    const data = await res.json();
+    if (!data.ok) { document.getElementById('loginError').style.display = 'block'; return; }
+    adminPin = pin;
+    sessionStorage.setItem('vl_admin_pin', pin);
+    ALL_PATIENTS = data.patients;
+    enterApp();
+  } catch (e) {
+    document.getElementById('loginError').textContent = 'Connection error — check API_URL.';
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+function enterApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  initFilters();
+  filtered = [...ALL_PATIENTS];
+  applyFilters();
+}
+function logout() {
+  sessionStorage.removeItem('vl_admin_pin');
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginPin').value = '';
+}
+async function refreshDashboard() {
+  try {
+    const res = await fetch(`${API_URL}?action=vlPoll&facility=ADMIN&pin=${encodeURIComponent(adminPin)}`);
+    const data = await res.json();
+    if (!data.ok) { document.getElementById('connDot').classList.remove('connected'); return; }
+    ALL_PATIENTS = data.patients;
+    document.getElementById('connDot').classList.add('connected');
+    initFilters();
+    applyFilters();
+  } catch (e) { document.getElementById('connDot').classList.remove('connected'); }
+}
+
+/* ---------- Filters (dynamic cascades from live data) ---------- */
+function initFilters() {
+  const states = [...new Set(ALL_PATIENTS.map(p => p.state).filter(Boolean))].sort();
+  const facilities = [...new Set(ALL_PATIENTS.map(p => p.facility).filter(Boolean))].sort();
+
+  const prevFState = document.getElementById('fState').value;
+  const prevFFacility = document.getElementById('fFacility').value;
+  const prevRState = document.getElementById('rState').value;
+  const prevRFacility = document.getElementById('rFacility').value;
+
+  document.getElementById('fState').innerHTML = '<option value="">All</option>' + states.map(s => `<option>${s}</option>`).join('');
+  document.getElementById('fFacility').innerHTML = '<option value="">All</option>' + facilities.map(f => `<option>${f}</option>`).join('');
+  document.getElementById('rState').innerHTML = '<option value="">All States</option>' + states.map(s => `<option>${s}</option>`).join('');
+  document.getElementById('rFacility').innerHTML = '<option value="">All Facilities</option>' + facilities.map(f => `<option>${f}</option>`).join('');
+
+  if (states.includes(prevFState)) document.getElementById('fState').value = prevFState;
+  if (facilities.includes(prevFFacility)) document.getElementById('fFacility').value = prevFFacility;
+  if (states.includes(prevRState)) document.getElementById('rState').value = prevRState;
+  if (facilities.includes(prevRFacility)) document.getElementById('rFacility').value = prevRFacility;
+
+  cascadeDistrict(true);
+  cascadeRDistrict(true);
+}
+function districtsFor(state) {
+  const pool = state ? ALL_PATIENTS.filter(p => p.state === state) : ALL_PATIENTS;
+  return [...new Set(pool.map(p => p.district).filter(Boolean))].sort();
+}
+function blocksFor(state, district) {
+  let pool = ALL_PATIENTS;
+  if (state) pool = pool.filter(p => p.state === state);
+  if (district) pool = pool.filter(p => p.district === district);
+  return [...new Set(pool.map(p => p.block).filter(Boolean))].sort();
+}
+function cascadeDistrict(preserve) {
+  const state = document.getElementById('fState').value;
+  const prevDistrict = preserve ? document.getElementById('fDistrict').value : '';
+  const districts = districtsFor(state);
+  document.getElementById('fDistrict').innerHTML = '<option value="">All</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  if (districts.includes(prevDistrict)) document.getElementById('fDistrict').value = prevDistrict;
+  cascadeBlock(preserve);
+}
+function cascadeBlock(preserve) {
+  const state = document.getElementById('fState').value;
+  const district = document.getElementById('fDistrict').value;
+  const prevBlock = preserve ? document.getElementById('fBlock').value : '';
+  const blocks = blocksFor(state, district);
+  document.getElementById('fBlock').innerHTML = '<option value="">All</option>' + blocks.map(b => `<option>${b}</option>`).join('');
+  if (blocks.includes(prevBlock)) document.getElementById('fBlock').value = prevBlock;
+}
+function cascadeRDistrict(preserve) {
+  const state = document.getElementById('rState').value;
+  const prevDistrict = preserve ? document.getElementById('rDistrict').value : '';
+  const districts = districtsFor(state);
+  document.getElementById('rDistrict').innerHTML = '<option value="">All Districts</option>' + districts.map(d => `<option>${d}</option>`).join('');
+  if (districts.includes(prevDistrict)) document.getElementById('rDistrict').value = prevDistrict;
+  cascadeRBlock(preserve);
+}
+function cascadeRBlock(preserve) {
+  const state = document.getElementById('rState').value;
+  const district = document.getElementById('rDistrict').value;
+  const prevBlock = preserve ? document.getElementById('rBlock').value : '';
+  const blocks = blocksFor(state, district);
+  document.getElementById('rBlock').innerHTML = '<option value="">All Blocks</option>' + blocks.map(b => `<option>${b}</option>`).join('');
+  if (blocks.includes(prevBlock)) document.getElementById('rBlock').value = prevBlock;
+}
+
+function applyFilters() {
+  const today = new Date();
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  const state = document.getElementById('fState').value;
+  const district = document.getElementById('fDistrict').value;
+  const block = document.getElementById('fBlock').value;
+  const facility = document.getElementById('fFacility').value;
+  const eligibleSel = document.getElementById('fEligible').value;
+  const statusSel = document.getElementById('fStatus').value;
+  const actionSel = document.getElementById('fAction').value;
+  const outcomeSel = document.getElementById('fOutcome').value;
+  const dueFrom = document.getElementById('fDueFrom').value ? new Date(document.getElementById('fDueFrom').value) : null;
+  const dueTo = document.getElementById('fDueTo').value ? new Date(document.getElementById('fDueTo').value) : null;
+
+  filtered = ALL_PATIENTS.filter(p => {
+    if (state && p.state !== state) return false;
+    if (district && p.district !== district) return false;
+    if (block && p.block !== block) return false;
+    if (facility && p.facility !== facility) return false;
+    const elig = isEligible(p, today);
+    if (eligibleSel === 'Eligible' && !elig) return false;
+    if (eligibleSel === 'Not Eligible' && elig) return false;
+    if (statusSel && effectiveStatus(p, today) !== statusSel) return false;
+    if (actionSel && p.actionTaken !== actionSel) return false;
+    if (outcomeSel && effectiveOutcome(p) !== outcomeSel) return false;
+    if (dueFrom || dueTo) {
+      const sd = statusAndDueDate(p, today);
+      const dd = parseDmy(sd.dueDate);
+      if (!dd) return false;
+      if (dueFrom && dd < dueFrom) return false;
+      if (dueTo && dd > dueTo) return false;
+    }
+    if (q) {
+      const hay = (p.uid + p.artNo + p.name).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  updateDashboard();
+}
+
+function resetFilters() {
+  document.getElementById('searchBox').value = '';
+  document.getElementById('fState').value = '';
+  cascadeDistrict();
+  ['fFacility','fEligible','fStatus','fAction','fOutcome'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('fDueFrom').value = '';
+  document.getElementById('fDueTo').value = '';
+  applyFilters();
+}
+function fToday() {
+  const d = new Date().toISOString().split('T')[0];
+  document.getElementById('fDueFrom').value = d;
+  document.getElementById('fDueTo').value = d;
+  applyFilters();
+}
+function fThisMonth() {
+  const now = new Date();
+  document.getElementById('fDueFrom').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  document.getElementById('fDueTo').value = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
+  applyFilters();
+}
+
+/* ---------- Stats + Charts ---------- */
+function updateDashboard() {
+  const today = new Date();
+  const pool = filtered;
+  const totalOnArtMis = pool.length;
+  const eligible = pool.filter(p => isEligible(p, today));
+  const eligibleCount = eligible.length;
+
+  const tested365 = eligible.filter(p => {
+    const d = parseDmy(p.latestVLDate);
+    return d && Math.floor((today - d)/86400000) <= 365;
+  });
+  const suppressed = tested365.filter(p => effectiveOutcome(p) === 'VL Suppressed');
+  const unsuppressed = tested365.filter(p => effectiveOutcome(p) === 'VL Unsuppressed');
+  const due = eligible.filter(p => effectiveStatus(p, today) === 'Due for VL Test');
+  const overdue = eligible.filter(p => effectiveStatus(p, today) === 'Over Due for VL Test');
+  const never = eligible.filter(p => !p.latestVLDate);
+  const eacDue = eligible.filter(p => effectiveStatus(p, today) === 'EAC & Due for Repeat VL Test');
+  const repeatDone = pool.filter(p => p.actionTaken === 'Tested for Repeat VL');
+
+  const pct = (n, d) => d > 0 ? ((n/d)*100).toFixed(1) : '0';
+  const cards = [
+    { cls:'', val: totalOnArtMis, lbl:'Total On-ART + MIS' },
+    { cls:'', val: eligibleCount, lbl:'Eligible for VL Test' },
+    { cls:'', val: `${tested365.length} (${pct(tested365.length, eligibleCount)}%)`, lbl:'VL Test Done in last 365 days' },
+    { cls:'suppressed', val: `${suppressed.length} (${pct(suppressed.length, tested365.length)}%)`, lbl:'VL Suppressed (of Tested)' },
+    { cls:'unsuppressed', val: `${unsuppressed.length} (${pct(unsuppressed.length, tested365.length)}%)`, lbl:'VL Unsuppressed (of Tested)' },
+    { cls:'due', val: due.length, lbl:'Due for VL Test' },
+    { cls:'overdue', val: overdue.length, lbl:'Over Due for VL Test' },
+    { cls:'never', val: never.length, lbl:'VL Never Tested' },
+    { cls:'eac', val: eacDue.length, lbl:'EAC & Due for Repeat VL Test' },
+    { cls:'repeat', val: `${repeatDone.length} (${pct(repeatDone.length, eacDue.length)}%)`, lbl:'Repeat VL Test Done' }
+  ];
+  document.getElementById('statsBar').innerHTML = cards.map(c =>
+    `<div class="stat-card ${c.cls}"><div class="val">${c.val}</div><div class="lbl">${c.lbl}</div></div>`).join('');
+
+  updateCharts(eligible, tested365, suppressed, unsuppressed, due, overdue, never, eacDue);
+}
+
+function countBy(arr, fn) {
+  const m = {};
+  arr.forEach(x => { const k = fn(x) || '(blank)'; m[k] = (m[k]||0) + 1; });
+  return m;
+}
+function renderChart(id, type, labels, data, options) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type, data: { labels, datasets: [{ data, backgroundColor: ['#1565C0','#C62828','#2E7D32','#F57F17','#6A1B9A','#26C6DA','#E65100','#455A64','#AD1457','#00838F'] }] },
+    options: Object.assign({ responsive:true, maintainAspectRatio:false, plugins:{legend:{display: type==='pie'}} }, options || {})
+  });
+}
+function updateCharts(eligible, tested365, suppressed, unsuppressed, due, overdue, never, eacDue) {
+  const today = new Date();
+  const vlTestedOnly = tested365.length - unsuppressed.filter(p => effectiveStatus(p, today) === 'EAC & Due for Repeat VL Test').length;
+  const statusCounts = {
+    'VL Tested': Math.max(0, vlTestedOnly),
+    'Due for VL Test': due.length, 'Over Due for VL Test': overdue.length,
+    'VL Never Tested': never.length, 'EAC & Due for Repeat VL Test': eacDue.length
+  };
+  renderChart('statusChart', 'bar', Object.keys(statusCounts), Object.values(statusCounts), { indexAxis:'y' });
+
+  const errorCount = tested365.filter(p => effectiveOutcome(p) === 'Error').length;
+  renderChart('outcomeChart', 'pie', ['VL Suppressed','VL Unsuppressed','Error'], [suppressed.length, unsuppressed.length, errorCount]);
+
+  const distCounts = countBy(eligible, p => p.district);
+  const topDist = Object.entries(distCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  renderChart('districtChart', 'bar', topDist.map(d=>d[0]), topDist.map(d=>d[1]), { indexAxis:'y' });
+
+  const facMap = {};
+  eligible.forEach(p => {
+    const f = p.facility || '(blank)';
+    facMap[f] = facMap[f] || { eligible:0, tested:0 };
+    facMap[f].eligible++;
+    const d = parseDmy(p.latestVLDate);
+    if (d && Math.floor((today - d)/86400000) <= 365) facMap[f].tested++;
+  });
+  const facEntries = Object.entries(facMap).sort((a,b)=>b[1].eligible-a[1].eligible).slice(0,12);
+  if (charts['facilityChart']) charts['facilityChart'].destroy();
+  charts['facilityChart'] = new Chart(document.getElementById('facilityChart'), {
+    type:'bar',
+    data: { labels: facEntries.map(f=>f[0]), datasets: [
+      { label:'Eligible', data: facEntries.map(f=>f[1].eligible), backgroundColor:'#1565C0' },
+      { label:'Tested (365d)', data: facEntries.map(f=>f[1].tested), backgroundColor:'#2E7D32' }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:true}} }
+  });
+}
+
+/* ---------- Reports modal ---------- */
+let reportData = [];
+function openReport() { document.getElementById('reportModal').classList.add('open'); generateReport(); }
+function closeReport() { document.getElementById('reportModal').classList.remove('open'); }
+function rToday() {
+  const d = new Date().toISOString().split('T')[0];
+  document.getElementById('rFrom').value = d; document.getElementById('rTo').value = d;
+  generateReport();
+}
+function rThisMonth() {
+  const now = new Date();
+  document.getElementById('rFrom').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  document.getElementById('rTo').value = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
+  generateReport();
+}
+
+function getReportFiltered() {
+  const today = new Date();
+  const state = document.getElementById('rState').value;
+  const district = document.getElementById('rDistrict').value;
+  const block = document.getElementById('rBlock').value;
+  const facility = document.getElementById('rFacility').value;
+  const eligibleSel = document.getElementById('rEligible').value;
+  const statusSel = document.getElementById('rStatus').value;
+  const actionSel = document.getElementById('rAction').value;
+  const outcomeSel = document.getElementById('rOutcome').value;
+  const from = document.getElementById('rFrom').value ? new Date(document.getElementById('rFrom').value) : null;
+  const to = document.getElementById('rTo').value ? new Date(document.getElementById('rTo').value) : null;
+
+  return ALL_PATIENTS.filter(p => {
+    if (state && p.state !== state) return false;
+    if (district && p.district !== district) return false;
+    if (block && p.block !== block) return false;
+    if (facility && p.facility !== facility) return false;
+    const elig = isEligible(p, today);
+    if (eligibleSel === 'Eligible' && !elig) return false;
+    if (eligibleSel === 'Not Eligible' && elig) return false;
+    if (statusSel && effectiveStatus(p, today) !== statusSel) return false;
+    if (actionSel && p.actionTaken !== actionSel) return false;
+    if (outcomeSel && effectiveOutcome(p) !== outcomeSel) return false;
+    if (from || to) {
+      const sd = statusAndDueDate(p, today);
+      const dd = parseDmy(sd.dueDate);
+      if (!dd) return false;
+      if (from && dd < from) return false;
+      if (to && dd > to) return false;
+    }
+    return true;
+  });
+}
+
+function generateReport() {
+  const today = new Date();
+  reportData = getReportFiltered();
+  const total = reportData.length;
+  const eligible = reportData.filter(p => isEligible(p, today)).length;
+  const tested = reportData.filter(p => {
+    const d = parseDmy(p.latestVLDate);
+    return d && Math.floor((today-d)/86400000) <= 365;
+  }).length;
+
+  document.getElementById('reportSummary').innerHTML = `
+    <div style="background:#E3F2FD;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#1565C0">${total}</div><div style="font-size:11px;color:#607D8B">Total Rows</div></div>
+    <div style="background:#E8F5E9;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#2E7D32">${eligible}</div><div style="font-size:11px;color:#607D8B">Eligible</div></div>
+    <div style="background:#FFF3E0;padding:8px 14px;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:#E65100">${tested}</div><div style="font-size:11px;color:#607D8B">Tested (365d)</div></div>
+  `;
+  const tbody = document.getElementById('reportBody');
+  tbody.innerHTML = reportData.map((p,i) => {
+    const elig = isEligible(p, today) ? 'Eligible' : 'Not Eligible';
+    const sd = statusAndDueDate(p, today);
+    return `<tr>
+      <td>${i+1}</td><td>${p.uid}</td><td>${p.artNo}</td><td>${p.name}</td><td>${p.age}</td><td>${p.sex}</td>
+      <td>${p.state}</td><td>${p.district}</td><td>${p.block}</td><td>${p.facility}</td><td>${p.artStart}</td><td>${elig}</td>
+      <td>${p.vlTestStatus || sd.status}</td><td>${p.latestVLDate}</td><td>${p.latestVLValue}</td>
+      <td>${p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue)}</td><td>${sd.dueDate}</td><td>${p.actionTaken}</td><td>${p.remarks}</td>
+    </tr>`;
+  }).join('');
+}
+
+function resetReport() {
+  ['rState','rDistrict','rBlock','rFacility','rEligible','rStatus','rAction','rOutcome'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('rFrom').value = ''; document.getElementById('rTo').value = '';
+  generateReport();
+}
+
+function downloadReport() {
+  const today = new Date();
+  const ws_data = [['Sl.','UID','ART No.','Name','Age','Sex','State','District','Block','Facility','ART Start','Eligible','VL Test Status','Date of Latest VL Test','Latest VL Test','Latest VL Outcome','Due Date of VL Test','Action Taken','Remarks']];
+  reportData.forEach((p,i) => {
+    const elig = isEligible(p, today) ? 'Eligible' : 'Not Eligible';
+    const sd = statusAndDueDate(p, today);
+    ws_data.push([i+1,p.uid,p.artNo,p.name,p.age,p.sex,p.state,p.district,p.block,p.facility,p.artStart,elig,
+      p.vlTestStatus || sd.status, p.latestVLDate, p.latestVLValue, p.latestVLOutcome || autoOutcomeFromValue(p.latestVLValue),
+      sd.dueDate, p.actionTaken, p.remarks]);
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  XLSX.utils.book_append_sheet(wb, ws, 'VL Report');
+  XLSX.writeFile(wb, 'ASACS_VL_Report.xlsx');
+}
+
+/* ---------- Monthly MLL upload (auto-extract On-ART / On-ART-MIS) ---------- */
+function uploadMonthlyMll() {
+  const file = document.getElementById('mllFile').files[0];
+  if (!file) { alert('Please choose the MLL Excel/CSV file first.'); return; }
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = 'Reading file…';
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false });
+      if (rows.length === 0) { statusEl.textContent = 'File appears to be empty.'; return; }
+
+      statusEl.textContent = 'Matching against your facility list…';
+      let canonicalFacilities;
+      try {
+        const res = await fetch(`${API_URL}?action=facilityList`);
+        const data = await res.json();
+        canonicalFacilities = data.facilities || [];
+      } catch (e2) {
+        statusEl.textContent = '❌ Could not load your facility list — try again.';
+        return;
+      }
+      function normFacilityName(s) { return String(s).toLowerCase().replace(/\s+/g,' ').trim(); }
+      const facilityLookup = {};
+      canonicalFacilities.forEach(f => { facilityLookup[normFacilityName(f)] = f; });
+
+      function parseAnyDate(str) {
+        const s = String(str || '').trim();
+        let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/);
+        if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+        m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:[ T].*)?$/);
+        if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+        m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T].*)?$/);
+        if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+        return null;
+      }
+      function normalizeDate(str) {
+        const d = parseAnyDate(str);
+        return d && !isNaN(d.getTime()) ? fmtDmy(d) : String(str || '').trim();
+      }
+
+      const records = [];
+      let skippedStatus = 0, skippedFacility = 0;
+      rows.forEach(row => {
+        const status = String(row['Status in ART care'] || '').trim();
+        if (status !== 'On-ART' && status !== 'On-ART-MIS') { skippedStatus++; return; }
+        const rawFacility = String(row['Facility Name'] || '').trim();
+        const canonicalFacility = facilityLookup[normFacilityName(rawFacility)];
+        if (!canonicalFacility) { skippedFacility++; return; }
+        records.push({
+          uid: String(row['SNo.'] || '').trim(),
+          artNo: String(row['ART Reg No. (If initiated on ART)'] || '').trim(),
+          name: String(row['Name of Patient'] || '').trim(),
+          age: String(row['Age'] || '').trim(),
+          sex: String(row['Sex'] || '').trim(),
+          state: String(row['State'] || '').trim() || 'ASSAM',
+          district: String(row['District'] || '').trim(),
+          block: String(row['Taluk/Tehsil'] || '').trim(),
+          address: String(row['Complete Address'] || '').trim(),
+          contact: String(row['Contact Number'] || '').trim(),
+          facility: canonicalFacility,
+          artStart: normalizeDate(row['Date of Start of ART']),
+          artStatus: status,
+          latestVLDate: normalizeDate(row['Date of Latest Viral Load']),
+          latestVLValue: String(row['Latest Viral Load'] || '').trim()
+        });
+      });
+
+      if (records.length === 0) {
+        statusEl.textContent = `No matching rows found. Checked ${rows.length} rows: ${skippedStatus} were not On-ART/On-ART-MIS, ${skippedFacility} were not one of your facilities.`;
+        return;
+      }
+      statusEl.textContent = `Found ${records.length} On-ART/On-ART-MIS patients across your facilities. Uploading…`;
+
+      const res2 = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'vlUploadList', pin: adminPin, records })
+      });
+      const data2 = await res2.json();
+      if (data2.ok) {
+        const s = data2.summary;
+        statusEl.textContent = `✅ Done: ${s.total} on-ART/MIS patients now live (${s.added} new, ${s.kept} carried forward with existing tracking, ${s.droppedAsResolved} removed — no longer On-ART/MIS).`;
+        await refreshDashboard();
+      } else {
+        statusEl.textContent = '❌ Upload failed: ' + data2.error;
+      }
+    } catch (err) {
+      statusEl.textContent = '❌ Could not read file: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ---------- Init ---------- */
+const savedPin = sessionStorage.getItem('vl_admin_pin');
+if (savedPin) {
+  adminPin = savedPin;
+  refreshDashboard().then(enterApp);
+}
+</script>
+</body>
+</html>
